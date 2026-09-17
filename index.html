@@ -159,6 +159,9 @@ tr:hover{background:#f8fafc}
 .room-pill:hover{background:#fde68a}
 .room-pill.selected{background:#b45309;color:#fff;border-color:#b45309}
 .room-pill .ord{display:inline-flex;align-items:center;justify-content:center;min-width:14px;height:14px;padding:0 3px;border-radius:50%;background:rgba(0,0,0,.18);font-size:9px;font-weight:700}
+.room-tag-dd summary{list-style:none}
+.room-tag-dd summary::-webkit-details-marker{display:none}
+.room-tag-dd[open] summary{background:#fde68a!important}
 .room-cap-badge{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:500;background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0}
 .room-cap-badge.warn{background:#fef3c7;color:#92400e;border-color:#fde68a}
 .room-cap-badge.over{background:#fef2f2;color:#b91c1c;border-color:#fecaca}
@@ -238,7 +241,7 @@ tr:hover{background:#f8fafc}
     </div>
     <div class="tbl-wrap">
       <table>
-        <thead><tr><th>Code</th><th>Title</th><th>Program</th><th>Section</th><th>Faculty</th><th>Students</th><th>Lab</th><th>Excl.</th><th></th></tr></thead>
+        <thead><tr><th>Code</th><th>Title</th><th>Program</th><th>Section</th><th>Faculty</th><th>Students</th><th>Lab</th><th>Excl.</th><th>Rooms</th><th></th></tr></thead>
         <tbody id="coursesBody"></tbody>
       </table>
     </div>
@@ -1104,10 +1107,40 @@ function renderCourses(){
       <td><input type="number" value="${c.studentCount}" onchange="updCourse('${c.id}','studentCount',this.value)" style="width:70px"></td>
       <td><input type="checkbox" ${c.isLab?'checked':''} onchange="updCourse('${c.id}','isLab',this.checked);renderCourses();updateExclusions()"></td>
       <td><input type="checkbox" ${c.excluded?'checked':''} onchange="updCourse('${c.id}','excluded',this.checked);updateExclusions()"></td>
+      <td style="min-width:130px">
+        <details data-course="${c.id}" class="room-tag-dd">
+          <summary style="cursor:pointer;font-size:11px;padding:3px 8px;border:1px solid var(--brd);border-radius:12px;display:inline-block;background:${(c.allowedRoomIds&&c.allowedRoomIds.length)?'#fef3c7':'#f8fafc'}" title="Restrict this course's seating to specific room(s). Leave as 'Any room' to let Auto Seating pick freely.">🏛 ${(c.allowedRoomIds&&c.allowedRoomIds.length)?c.allowedRoomIds.length+' room'+(c.allowedRoomIds.length>1?'s':''):'Any room'}</summary>
+          <div style="margin-top:4px;max-width:220px">
+            ${state.rooms.filter(r=>r.active!==false).map(r=>{
+              const sel = (c.allowedRoomIds||[]).includes(r.id);
+              return `<span class="room-pill${sel?' selected':''}" data-room="${r.id}" onclick="toggleCourseRoom('${c.id}','${r.id}')">${esc(r.name)}</span>`;
+            }).join('') || '<span class="desc">No active rooms yet -- add one in the Rooms tab.</span>'}
+          </div>
+        </details>
+      </td>
       <td><button class="btn sm danger" onclick="delCourse('${c.id}')">×</button></td>
-    </tr>`).join('') || `<tr><td colspan="9" class="empty-state">No courses -- upload Excel or click Add.</td></tr>`;
+    </tr>`).join('') || `<tr><td colspan="10" class="empty-state">No courses -- upload Excel or click Add.</td></tr>`;
 }
 function esc(s){ return String(s||'').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+function toggleCourseRoom(courseId, roomId){
+  const c = state.courses.find(x=>x.id===courseId); if(!c) return;
+  c.allowedRoomIds = c.allowedRoomIds || [];
+  if(c.allowedRoomIds.includes(roomId)) c.allowedRoomIds = c.allowedRoomIds.filter(id=>id!==roomId);
+  else c.allowedRoomIds.push(roomId);
+  save();
+  // Update just this row's dropdown in place (instead of a full renderCourses)
+  // so the <details> panel stays open while the admin ticks several rooms.
+  const det = document.querySelector(`details[data-course="${courseId}"]`);
+  if(det){
+    const pill = det.querySelector(`.room-pill[data-room="${roomId}"]`);
+    if(pill) pill.classList.toggle('selected', c.allowedRoomIds.includes(roomId));
+    const sum = det.querySelector('summary');
+    if(sum) sum.textContent = c.allowedRoomIds.length ? `🏛 ${c.allowedRoomIds.length} room${c.allowedRoomIds.length>1?'s':''}` : '🏛 Any room';
+    sum && (sum.style.background = c.allowedRoomIds.length ? '#fef3c7' : '#f8fafc');
+  } else {
+    renderCourses();
+  }
+}
 
 /* ================= ROOMS ================= */
 function addRoom(){ state.rooms.push({id:uid(),name:'New Room',cols:6,rows:8,capacity:48,active:true,isLab:false}); save(); renderRooms(); updateStats(); }
@@ -1651,6 +1684,7 @@ function runSeating(onlyGrouped){
   const manualGroups = (state.manualProgramGroups||[]).filter(g=>g.programs&&g.programs.length>=1);
   const seatsPerCol = state.seatsPerColumn || 8;
   let pinnedOverflowCount = 0;
+  let roomTagOverflowCount = 0;
   let noLabRoomCount = 0;
   const allGroupedCourseIds = new Set(); // accumulated across sessions, used for onlyGrouped totals
 
@@ -1768,12 +1802,48 @@ function runSeating(onlyGrouped){
     if(!onlyGrouped){
       const ungroupedCourseIds = sessExams.map(ex=>ex.courseId).filter(cid=>!groupedCourseIds.has(cid));
       if(ungroupedCourseIds.length){
+        // Courses individually tagged (in the Data tab) to specific rooms are
+        // pinned there first -- independent of manual groups and Lab routing.
+        // Courses that share the exact same room selection are seated
+        // together, filling their tagged room(s) largest-first, same as a
+        // manual group's pinned rooms; any overflow spills into the shared pool.
+        const roomTaggedIds = ungroupedCourseIds.filter(cid=>{ const c=courseById.get(cid); return c && c.allowedRoomIds && c.allowedRoomIds.length; });
+        const untaggedIds = ungroupedCourseIds.filter(cid=>!roomTaggedIds.includes(cid));
+
+        if(roomTaggedIds.length){
+          const byRoomSet = new Map();
+          roomTaggedIds.forEach(cid=>{
+            const c = courseById.get(cid);
+            const key = [...c.allowedRoomIds].sort().join(',');
+            if(!byRoomSet.has(key)) byRoomSet.set(key, []);
+            byRoomSet.get(key).push(cid);
+          });
+          byRoomSet.forEach((cids, key)=>{
+            const tagStrips = buildStrips(cids);
+            if(!tagStrips.length) return;
+            const tagRooms = key.split(',').map(id=>activeRooms.find(r=>r.id===id)).filter(Boolean)
+              .sort((a,b)=>roomCapacity(b)-roomCapacity(a));
+            if(!tagRooms.length){
+              // Tagged room(s) no longer exist or are inactive -- fall back to the shared pool.
+              const result = placeStrips(tagStrips, roomIdx, colCursor);
+              roomIdx = result.roomIdx; colCursor = result.colCursor;
+              return;
+            }
+            const res = placeStripsInto(tagStrips, tagRooms, 0, 1, seatsPerCol);
+            if(res.leftover > 0){
+              const result = placeStrips(tagStrips, roomIdx, colCursor);
+              roomIdx = result.roomIdx; colCursor = result.colCursor;
+              roomTagOverflowCount++;
+            }
+          });
+        }
+
         // Lab-marked papers go into Lab-marked rooms only, kept separate
         // from the ordinary room pool. If no Lab room is configured yet,
         // fall back to the shared pool so the paper still gets seated
         // somewhere, and flag it in the completion toast.
-        const labIds = ungroupedCourseIds.filter(cid=>{ const c=courseById.get(cid); return c&&c.isLab; });
-        const nonLabIds = ungroupedCourseIds.filter(cid=>!labIds.includes(cid));
+        const labIds = untaggedIds.filter(cid=>{ const c=courseById.get(cid); return c&&c.isLab; });
+        const nonLabIds = untaggedIds.filter(cid=>!labIds.includes(cid));
         if(labIds.length){
           const labStrips = buildStrips(labIds);
           if(labStrips.length){
@@ -1856,6 +1926,7 @@ function runSeating(onlyGrouped){
     (groupCount ? ` (${groupCount} group${groupCount>1?'s':''} seated together)` : '') +
     (onlyGrouped ? ` — ungrouped students left unseated` : '') +
     (pinnedOverflowCount ? ` ⚠ ${pinnedOverflowCount} pinned-room group${pinnedOverflowCount>1?'s':''} overflowed into other rooms` : '') +
+    (roomTagOverflowCount ? ` ⚠ ${roomTagOverflowCount} room-tagged course${roomTagOverflowCount>1?'s':''} overflowed into other rooms` : '') +
     (noLabRoomCount ? ` ⚠ ${noLabRoomCount} Lab course(s) seated in regular rooms -- no Lab room is configured (check the Lab box in Rooms)` : '') +
     (parkedCount ? ` · ${parkedCount} parked for manual placement` : '') +
     (unplaced>0 ? ` ⚠ ${unplaced} could not fit — add more rooms` : ' ✓'),
