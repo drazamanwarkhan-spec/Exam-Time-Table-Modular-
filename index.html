@@ -657,7 +657,7 @@ tr:hover{background:#f8fafc}
 </div>
 <div class="row" style="margin-top:10px"><button class="btn" onclick="xlsxTimetableProgram()">⬇ Generate Excel Date Sheet</button><button class="btn ghost" onclick="pdfTimetableProgram()">⬇ Generate PDF Date Sheet</button></div></div>
     <div class="card"><h3>Timetable — Day-wise</h3><div class="desc">All exams per day with course, faculty, time.</div><div class="row"><button class="btn" onclick="xlsxTimetableDay()">⬇ Excel</button><button class="btn ghost" onclick="pdfTimetableDay()">⬇ PDF</button></div></div>
-    <div class="card"><h3>Student Individual Timetables</h3><div class="desc">One row/page per student showing their name, roll no, all scheduled exams with date, time, room and seat number.</div><div class="row"><button class="btn" onclick="xlsxStudentPapers()">⬇ Excel</button><button class="btn ghost" onclick="pdfStudentPapers()">⬇ PDF</button></div></div>
+    <div class="card"><h3>Student Individual Timetables</h3><div class="desc">One row/page per student showing their name, roll no, all scheduled exams with date, time, room and seat number.</div><div class="row"><button class="btn" onclick="xlsxStudentPapers()">⬇ Excel</button><button class="btn ghost" onclick="pdfStudentPapers()">⬇ PDF (table)</button><button class="btn ghost" onclick="pdfStudentAdmitCards()">⬇ PDF (Admit Card — 1 page/student)</button></div></div>
     <div class="card"><h3>Daily Class Schedule</h3><div class="desc">Per-day exam schedule with assigned rooms.</div><div class="row"><button class="btn" onclick="xlsxDaily()">⬇ Excel</button><button class="btn ghost" onclick="pdfDaily()">⬇ PDF</button></div></div>
     <div class="card"><h3>Seating Plan (room grid)</h3><div class="desc">Room-by-room seat layout for each session, laid out as a row/column grid.</div><div class="row"><button class="btn" onclick="xlsxSeatingGrid()">⬇ Excel</button><button class="btn ghost" onclick="pdfSeating()">⬇ PDF</button></div></div>
     <div class="card"><h3>Faculty Duty Sheet</h3><div class="desc">Faculty list per session with their courses.</div><div class="row"><button class="btn" onclick="xlsxFaculty()">⬇ Excel</button><button class="btn ghost" onclick="pdfFaculty()">⬇ PDF</button></div></div>
@@ -6590,6 +6590,88 @@ function pdfStudentPapers(){
   });
   doc.save('student-individual-timetables.pdf');
   toast(`Downloaded Student Individual Timetables PDF -- ${rows.length} paper row(s)`,'ok');
+}
+// Admit-card style export: one full page per student (portrait A4) with a
+// bordered student-info box up top (roll no / name / program / section),
+// then a table of that student's own exams (date, time, room, seat), then
+// a 2-way signature line (Student / Controller of Examination) at the foot
+// of the page. Mirrors pdfStudentPapers' filtering (program tag selection)
+// but renders per-student pages instead of one shared table.
+function pdfStudentAdmitCards(){
+  const selectedPrograms = new Set(selectedTimetablePrograms());
+  const students = [...state.students].filter(st=>st.courseIds && st.courseIds.length)
+    .sort((a,b)=>a.rollNo.localeCompare(b.rollNo));
+  const doc = new jsPDF({unit:'pt',format:'a4',orientation:'portrait'});
+  let page = 0;
+  students.forEach(st=>{
+    const papers = st.courseIds.map(cid=>{
+      const c = state.courses.find(x=>x.id===cid); if(!c) return null;
+      if(selectedPrograms.size && !selectedPrograms.has(c.program)) return null;
+      const sc = state.scheduled.find(x=>x.courseId===cid);
+      const sess = sc ? state.sessions.find(x=>x.id===sc.sessionId) : null;
+      const seat = state.seating.find(x=>x.studentId===st.id && x.courseId===cid);
+      const room = seat ? state.rooms.find(r=>r.id===seat.roomId) : null;
+      const sortKey = sess ? `${sess.date||''}|${sess.startTime||''}` : '9999-99-99|99:99';
+      return { sortKey, row:[
+        c.code||'', c.title||'',
+        sess?`${dayName(sess.date)}, ${formatDateSheetDate(sess.date)}`:'--',
+        sess?`${sess.startTime||''}-${sess.endTime||''}`:'--',
+        room?room.name:'--', seat?`Row ${seat.row}, Col ${seat.col}`:'--'
+      ]};
+    }).filter(Boolean).sort((a,b)=>a.sortKey.localeCompare(b.sortKey)).map(x=>x.row);
+    if(!papers.length) return;
+    if(page++) doc.addPage();
+    const pw = doc.internal.pageSize.getWidth();
+    const y0 = pdfReportHeader(doc, 'EXAMINATION ADMIT CARD', st.program || '');
+
+    // Bordered student-info box
+    const boxX=40, boxY=y0+6, boxW=pw-80, boxH=72;
+    doc.setDrawColor(30,64,175).setLineWidth(1);
+    doc.rect(boxX, boxY, boxW, boxH);
+    doc.setDrawColor(226,232,240).setLineWidth(0.5);
+    doc.line(boxX, boxY+boxH/2, boxX+boxW, boxY+boxH/2);
+    doc.line(boxX+boxW/2, boxY, boxX+boxW/2, boxY+boxH);
+    doc.setTextColor(0,0,0);
+    const col1X=boxX+14, col2X=boxX+boxW/2+14, r1Y=boxY+boxH/4+3, r2Y=boxY+boxH*3/4+3;
+    const field=(x,y,label,val)=>{
+      doc.setFont('helvetica','bold').setFontSize(9);
+      doc.text(label, x, y);
+      doc.setFont('helvetica','normal').setFontSize(10);
+      doc.text(String(val||'--'), x, y+13);
+    };
+    field(col1X, r1Y-6, 'ROLL NO', st.rollNo);
+    field(col2X, r1Y-6, 'PROGRAM', st.program);
+    field(col1X, r2Y-6, 'NAME', st.name);
+    field(col2X, r2Y-6, 'SECTION', st.section);
+
+    doc.autoTable({
+      head:[['Course','Subject Name','Date','Time','Room','Seat']],
+      body: papers, startY: boxY+boxH+18,
+      styles:{font:'helvetica',fontSize:9,cellPadding:5.5,textColor:[0,0,0],lineColor:[0,0,0],lineWidth:.4,overflow:'linebreak'},
+      headStyles:{fillColor:[30,64,175],textColor:255,fontStyle:'bold'},
+      margin:{left:40,right:40}
+    });
+
+    const noteY = doc.lastAutoTable.finalY + 22;
+    doc.setFont('helvetica','italic').setFontSize(8.5).setTextColor(90,90,90);
+    doc.text('This admit card must be presented, along with a valid university ID card, at every examination listed above.', 40, noteY, {maxWidth: pw-80});
+    doc.setTextColor(0,0,0);
+
+    // 2-way signature line at the foot of the page (Student / Controller)
+    const ph = doc.internal.pageSize.getHeight();
+    const sy = ph - 60, labelY = sy + 14, margin2 = 50, lineW = 150;
+    const leftX = margin2, rightX = pw - margin2 - lineW;
+    doc.setDrawColor(60,60,60).setLineWidth(0.75);
+    [[leftX,'Student Signature'],[rightX,'Controller of Examination']].forEach(([x,label])=>{
+      doc.line(x, sy, x + lineW, sy);
+      doc.setFont('helvetica','normal').setFontSize(9).setTextColor(40,40,40);
+      doc.text(label, x + lineW/2, labelY, {align:'center'});
+    });
+    doc.setTextColor(0,0,0);
+  });
+  if(!page){ toast(selectedPrograms.size ? 'No students match the selected department/program(s) in Timetable -- Program-wise' : 'No student paper data yet -- run Auto Schedule and Generate Seating first','warn'); return; }
+  doc.save('student-admit-cards.pdf');
+  toast(`Downloaded Student Admit Cards PDF -- ${page} student page(s)`,'ok');
 }
 function pdfDaily(){
   const rows = [];
