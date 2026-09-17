@@ -358,7 +358,7 @@ tr:hover{background:#f8fafc}
     <div class="row" style="flex-direction:column;align-items:flex-start;gap:6px">
       <label style="display:flex;gap:6px;align-items:center;font-weight:normal">
         <input type="checkbox" id="chkMergeSections" onchange="state.mergeSectionsByCode=this.checked;save()">
-        <b>Section grouping</b> — auto-merge a course offered in two+ sections (same course code) into one session, so all sections sit the exam together
+        <b>Section grouping</b> — auto-merge a course offered in two+ sections (same course code <b>or</b> the same course name) into one session, so all sections sit the exam together
       </label>
       <label style="display:flex;gap:6px;align-items:center;font-weight:normal">
         <input type="checkbox" id="chkTeacherDays" onchange="state.groupTeacherDays=this.checked;save()">
@@ -768,7 +768,7 @@ let state = {
   timetableTaggedPrograms: null, // programs selected for merged/custom timetable reports
   timetableProgramGroups: [], // [{id,name,department,programs:[]}] custom report groups
   schedulingGroups: [], // manual course groups: {id, name, courseIds:[]} -- forced into the same session
-  mergeSectionsByCode: true,   // auto: courses sharing the same course code (different sections) always land in the same session
+  mergeSectionsByCode: true,   // auto: courses sharing the same course code, or the same course name (different sections), always land in the same session
   groupTeacherDays: true,      // soft: prefer putting all of one teacher's exams on the same day (different sessions ok)
   sessionMode: 3,
   maxExamsPerDay: 2,
@@ -1310,9 +1310,11 @@ function roomCapacity(room){ return Math.max(0, +(room?.capacity || room?.cols *
 // indivisible block -- every course inside a unit ALWAYS lands in the same
 // session, together:
 //   • Section grouping  (state.mergeSectionsByCode): any courses sharing the
-//     same course code -- i.e. the same course offered as separate sections --
-//     are merged automatically. This is what makes "Course X, Section A" and
-//     "Course X, Section B" sit their exam on the same day/session.
+//     same course code, OR the same course name/title -- i.e. the same paper
+//     offered as separate sections, sometimes entered under slightly
+//     different codes -- are merged automatically. This is what makes
+//     "Course X, Section A" and "Course X, Section B" sit their exam on the
+//     same day/session even if one section's code was typed differently.
 //   • Course grouping   (state.schedulingGroups): admin-defined groups of any
 //     courses (different codes, different programs -- e.g. electives that must
 //     run at the same time) are merged the same way.
@@ -1329,11 +1331,20 @@ function buildSchedulingUnits(courseList, enrollMap){
 
   if(state.mergeSectionsByCode){
     const byCode = new Map();
+    const byTitle = new Map();
     courseList.forEach(c => {
-      const key = String(c.code || '').trim().toUpperCase();
-      if(!key) return;
-      if(byCode.has(key)) union(c.id, byCode.get(key));
-      else byCode.set(key, c.id);
+      const codeKey = String(c.code || '').trim().toUpperCase();
+      if(codeKey){
+        if(byCode.has(codeKey)) union(c.id, byCode.get(codeKey));
+        else byCode.set(codeKey, c.id);
+      }
+      // Same course name/title also counts as the same paper, even when the
+      // code differs between sections (e.g. a typo or a section-specific code).
+      const titleKey = String(c.title || '').trim().toUpperCase();
+      if(titleKey){
+        if(byTitle.has(titleKey)) union(c.id, byTitle.get(titleKey));
+        else byTitle.set(titleKey, c.id);
+      }
     });
   }
   (state.schedulingGroups || []).forEach(g => {
@@ -2890,6 +2901,7 @@ function assignManualClashSeat(studentId, sessionId, roomId, row, col, preferred
   state.manualSeatOverrides=state.manualSeatOverrides.filter(x=>!(x.studentId===studentId&&x.sessionId===sessionId));
   state.manualSeatOverrides.push(ov);
   state.seating.push({...ov,manual:true});
+  ensureScheduled(sessionId, chosen.id);
   markJustPlaced(sessionId, roomId, row, col);
   save(); renderSeating();
   toast(`✓ ${st.name} assigned to ${chosen.code} at ${room.name}, Row ${row}, Column ${col}`,'ok');
@@ -2957,6 +2969,19 @@ function dropToStudentPark(ev, sessionId){
   }
   clearDragState();
 }
+// Ensure a (session, course) pairing exists in state.scheduled. Manual seating
+// paths (e.g. dragging a parked/unscheduled paper straight onto a seat) create
+// real seats without ever going through Auto Schedule, so every report that
+// lists a session's exams via state.scheduled would otherwise never see them.
+// Called wherever a seat is manually created for a course; a no-op if the
+// course was already scheduled (the normal Auto Schedule path).
+function ensureScheduled(sessionId, courseId){
+  if(!state.scheduled.some(sc=>sc.sessionId===sessionId && sc.courseId===courseId)){
+    state.scheduled.push({id:uid(), sessionId, courseId});
+    return true;
+  }
+  return false;
+}
 function assignParkedStudents(entries, sessionId, roomId, row, col){
   const candidates=(entries||[]).filter(entry=>entry.sessionId===sessionId &&
     (state.parkedStudents||[]).some(p=>p.sessionId===entry.sessionId&&p.studentId===entry.studentId&&p.courseId===entry.courseId));
@@ -2983,6 +3008,7 @@ function assignParkedStudents(entries, sessionId, roomId, row, col){
       .filter(x=>!(x.sessionId===sessionId&&x.studentId===entry.studentId&&x.courseId===entry.courseId));
     state.manualSeatOverrides.push(ov);
     state.seating.push({...ov,manual:true});
+    ensureScheduled(sessionId, entry.courseId);
     occupied.add(`${slot.roomId}|${slot.row}|${slot.col}`);
     markJustPlaced(sessionId, slot.roomId, slot.row, slot.col);
     // Confirm exactly which course landed where, not just a headcount --
@@ -3013,6 +3039,7 @@ function moveSeatedStudentSeat(source, sessionId, roomId, row, col){
     .filter(x=>!(x.sessionId===sessionId&&x.studentId===source.studentId&&x.courseId===source.courseId));
   state.manualSeatOverrides.push(ov);
   state.seating.push({...ov,manual:true});
+  ensureScheduled(sessionId, source.courseId);
   markJustPlaced(sessionId, roomId, row, col);
   save(); renderSeating();
   const st=state.students.find(x=>x.id===source.studentId);
@@ -4912,8 +4939,10 @@ function renderCourseClashes(){
 function isCourseGrouped(course){
   if(!course) return false;
   if(state.mergeSectionsByCode){
-    const key = String(course.code||'').trim().toUpperCase();
-    if(key && state.courses.filter(c=>String(c.code||'').trim().toUpperCase()===key).length > 1) return true;
+    const codeKey = String(course.code||'').trim().toUpperCase();
+    if(codeKey && state.courses.filter(c=>String(c.code||'').trim().toUpperCase()===codeKey).length > 1) return true;
+    const titleKey = String(course.title||'').trim().toUpperCase();
+    if(titleKey && state.courses.filter(c=>String(c.title||'').trim().toUpperCase()===titleKey).length > 1) return true;
   }
   return (state.schedulingGroups||[]).some(g => (g.courseIds||[]).includes(course.id) && (g.courseIds||[]).length>1);
 }
@@ -4922,7 +4951,7 @@ function renderCourseGroupsCard(){
   if(!el) return;
   const groups = state.schedulingGroups || [];
   if(!groups.length){
-    el.innerHTML = '<div class="empty-state" style="padding:10px 0">No manual course groups yet. Section grouping (same course code) is handled automatically above.</div>';
+    el.innerHTML = '<div class="empty-state" style="padding:10px 0">No manual course groups yet. Section grouping (same course code or same course name) is handled automatically above.</div>';
     return;
   }
   el.innerHTML = groups.map(g => {
@@ -6399,10 +6428,15 @@ function xlsxTimetableDay(){
   xlsxDownload(sheets, 'timetable-day-wise.xlsx');
 }
 function xlsxStudentPapers(){
+  const selectedPrograms = new Set(selectedTimetablePrograms());
   const rows = [...state.students].filter(st=>st.courseIds && st.courseIds.length)
     .sort((a,b)=>a.rollNo.localeCompare(b.rollNo)).flatMap(st=>{
       return st.courseIds.map(cid=>{
         const c = state.courses.find(x=>x.id===cid); if(!c) return null;
+        // Only include papers belonging to a program currently ticked in
+        // Timetable -- Program-wise (DSU Final Date Sheet); keeps this report
+        // scoped to the same department/program selection as that report.
+        if(selectedPrograms.size && !selectedPrograms.has(c.program)) return null;
         const sc = state.scheduled.find(x=>x.courseId===cid);
         const sess = sc ? state.sessions.find(x=>x.id===sc.sessionId) : null;
         const seat = state.seating.find(x=>x.studentId===st.id && x.courseId===cid);
@@ -6411,13 +6445,14 @@ function xlsxStudentPapers(){
         const sortKey = sess ? `${sess.date||''}|${sess.startTime||''}` : '9999-99-99|99:99';
         return { sortKey, row: {
           'Roll No':st.rollNo, 'Name':st.name, 'Program':st.program||'', 'Section':st.section||'',
-          'Course':c.code, 'Title':c.title, 'Date':sess?sess.date:'', 'Time':sess?`${sess.startTime}-${sess.endTime}`:'',
-          'Room':room?room.name:'', 'Seat':seat?`COL-${seat.col} / ROW-${seat.row}`:''
+          'Course':c.code, 'Subject Name':c.title, 'Date':sess?sess.date:'', 'Time':sess?`${sess.startTime}-${sess.endTime}`:'',
+          'Room':room?room.name:'', 'Row':seat?seat.row:'', 'Column':seat?seat.col:''
         }};
       }).filter(Boolean)
       .sort((a,b)=>a.sortKey.localeCompare(b.sortKey))
       .map(x=>x.row);
     });
+  if(!rows.length){ toast(selectedPrograms.size ? 'No students match the selected department/program(s) in Timetable -- Program-wise' : 'No student paper data yet','warn'); return; }
   xlsxDownload({'Student Timetables':rows}, 'student-individual-timetables.xlsx');
 }
 function xlsxDaily(){
@@ -6521,10 +6556,15 @@ function pdfTimetableDay(){
   toast(`Downloaded Day-wise Timetable PDF -- ${dates.length} day(s)`,'ok');
 }
 function pdfStudentPapers(){
+  const selectedPrograms = new Set(selectedTimetablePrograms());
   const rows = [...state.students].filter(st=>st.courseIds && st.courseIds.length)
     .sort((a,b)=>a.rollNo.localeCompare(b.rollNo)).flatMap(st=>{
       return st.courseIds.map(cid=>{
         const c = state.courses.find(x=>x.id===cid); if(!c) return null;
+        // Only include this student's papers that belong to a program currently
+        // selected/ticked in Timetable -- Program-wise (DSU Final Date Sheet).
+        // Selecting fewer departments there narrows this report the same way.
+        if(selectedPrograms.size && !selectedPrograms.has(c.program)) return null;
         const sc = state.scheduled.find(x=>x.courseId===cid);
         const sess = sc ? state.sessions.find(x=>x.id===sc.sessionId) : null;
         const seat = state.seating.find(x=>x.studentId===st.id && x.courseId===cid);
@@ -6533,15 +6573,15 @@ function pdfStudentPapers(){
         return { sortKey, row: [
           st.rollNo, st.name, st.program||'', st.section||'',
           c.code||'', c.title||'', sess?formatDateSheetDate(sess.date):'', sess?`${sess.startTime}-${sess.endTime}`:'',
-          room?room.name:'', seat?`COL-${seat.col} / ROW-${seat.row}`:''
+          room?room.name:'', seat?`Row ${seat.row}`:'', seat?`Col ${seat.col}`:''
         ]};
       }).filter(Boolean).sort((a,b)=>a.sortKey.localeCompare(b.sortKey)).map(x=>x.row);
     });
-  if(!rows.length){ toast('No student paper data yet -- run Auto Schedule and Generate Seating first','warn'); return; }
+  if(!rows.length){ toast(selectedPrograms.size ? 'No students match the selected department/program(s) in Timetable -- Program-wise' : 'No student paper data yet -- run Auto Schedule and Generate Seating first','warn'); return; }
   const doc = new jsPDF({unit:'pt',format:'a4',orientation:'landscape'});
-  const y = pdfReportHeader(doc, 'STUDENT INDIVIDUAL TIMETABLES');
+  const y = pdfReportHeader(doc, 'STUDENT INDIVIDUAL TIMETABLES', excelDepartmentHeaderLabel());
   doc.autoTable({
-    head:[['Roll No','Name','Program','Section','Course','Title','Date','Time','Room','Seat']],
+    head:[['Roll No','Name','Program','Section','Course','Subject Name','Date','Time','Room','Row','Column']],
     body:rows, startY:y,
     styles:{font:'helvetica',fontSize:7.5,cellPadding:3,textColor:[0,0,0],lineColor:[0,0,0],lineWidth:.35,overflow:'linebreak'},
     headStyles:{fillColor:[30,64,175],textColor:255,fontStyle:'bold'},
