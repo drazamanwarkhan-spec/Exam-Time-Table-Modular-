@@ -2536,7 +2536,7 @@ function renderSeating(){
         return `<div class="section-room">
           <h4>${esc(room.name)} -- ${room.cols} cols × ${room.rows} rows</h4>
           <div class="legend" style="margin-bottom:10px">
-            ${cIds.map(cid => { const c = state.courses.find(x=>x.id===cid); return c?`<span class="lg ${courseColor.get(cid)}">${esc(c.code)} ${esc(c.section)}</span>`:'';}).join('')}
+            ${cIds.map(cid => { const c = state.courses.find(x=>x.id===cid); return c?`<span class="lg ${courseColor.get(cid)}" title="${esc(c.title||'')}">${esc(c.title?c.title+' -- ':'')}${esc(c.code)} ${esc(c.section)}</span>`:'';}).join('')}
             <span class="lg" style="background:#f1f5f9;color:#64748b;border:1px dashed #cbd5e1">-- gap col</span>
           </div>
           <div style="overflow-x:auto">
@@ -2551,7 +2551,7 @@ function renderSeating(){
                    ondragstart='startColumnDrag(event,${JSON.stringify({sessionId:sess.id,roomId:rid,col:ci})})'
                    ${colDropAttrs}
                    title="Drag to move or swap this whole column (${colSeats.length} student${colSeats.length===1?'':'s'}) with any other column, in this room or another room">
-                   ${isGap ? '· gap ·' : `⠿ ${esc(colCourse?colCourse.code:('Col '+ci))} (${colSeats.length})`}
+                   ${isGap ? '· gap ·' : `<span style="display:block;font-size:8px;font-weight:700;line-height:1.2">${esc(colCourse?colCourse.title:'')}</span>⠿ ${esc(colCourse?colCourse.code:('Col '+ci))} (${colSeats.length})`}
                  </div>`;
               }).join('')}
               ${Array.from({length:displayRows}).flatMap((_,ri) =>
@@ -2573,9 +2573,10 @@ function renderSeating(){
                      ondragstart='startSeatedStudentDrag(event,${JSON.stringify({sessionId:seat.sessionId,roomId:seat.roomId,row:seat.row,col:seat.col,studentId:seat.studentId,courseId:seat.courseId})})'
                      style="min-height:42px" title="${esc(stu?stu.name+' · ID: '+stu.rollNo:seat.studentId)} -- ${esc(c?c.code:'')}${seat.manual?' -- MANUAL':''}">
                      <input type="checkbox" class="seat-select" onclick="toggleDragSelection(event,'seat','${seatKey}',this.checked)" aria-label="Select ${esc(stu?.name||seat.studentId)}">
+                     <span style="font-size:6px;font-weight:700;color:inherit;opacity:.9;line-height:1.1;display:block;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(c?c.title:'')}">${esc(c?c.title:'')}</span>
+                     <span style="font-size:6px;color:inherit;opacity:.75">${esc(c?c.code:'')}</span>
                      <span class="seat-student-name">${esc(stu?stu.name:seat.studentId.slice(-8))}</span>
                      <span style="font-family:monospace;font-size:6px">ID: ${esc(stu?stu.rollNo:seat.studentId)}</span>
-                    <span style="font-size:6px;color:inherit;opacity:.75">${esc(c?c.code:'')}</span>
                   </div>`;
                 })
               ).join('')}
