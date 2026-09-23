@@ -7915,7 +7915,7 @@ function renderInvigilation(){
       <td><button class="btn sm danger" onclick="invigDelStaff('${s.id}')" title="Remove">✕</button></td>
     </tr>`;
   }).join('');
-  box.innerHTML=invigDeptTabsHTML()+`
+  box.innerHTML=invigDeptTabsHTML()+dsuWebPanelHTML()+`
   <datalist id="invFacList">${facOpts}</datalist><datalist id="invDesList">${desOpts}</datalist><datalist id="invDepList">${depOpts}</datalist>
   <div class="card">
     <div class="row" style="gap:12px;flex-wrap:wrap;align-items:end">
@@ -7931,6 +7931,7 @@ function renderInvigilation(){
       <button class="btn ghost" onclick="invigAddColumn()">➕ Add date/session column</button>
       <button class="btn ghost" onclick="invigAddAllFaculty()">👥 Add all faculty from system</button>
       <button class="btn ghost" onclick="invigAddStaff()">➕ Add invigilator</button>
+      <button class="btn" style="background:#0e7490;color:#fff;border-color:#0e7490" onclick="_dsuWeb.open=!_dsuWeb.open;renderInvigilation()" title="Search the DHA Suffa University website for a department's faculty list">🌐 Fetch faculty from DSU website</button>
       <label class="btn" style="cursor:pointer;background:#1d4ed8;color:#fff" title="Upload the department's list of invigilators (Word .docx, e.g. Annex-A: S.No / Name of Faculty / Designation / Remarks)">📄 Upload faculty list (Word)<input type="file" accept=".docx,.doc" style="display:none" onchange="invigImportExcel(event)"></label>
       <label class="btn ghost" style="cursor:pointer" title="Upload a faculty list in Excel (Name / Designation / Dept …) or an existing roster Excel">📊 Upload faculty list / roster (Excel)<input type="file" accept=".xlsx,.xls" style="display:none" onchange="invigImportExcel(event)"></label>
       <button class="btn green" onclick="invigAutoAssign()">⚡ Auto-assign duties</button>
@@ -8001,6 +8002,17 @@ function deptShortCode(v){
 function invigNameKey(n){
   return String(n||'').toLowerCase().replace(/\(.*?\)/g,' ').replace(/\b(prof|dr|mr|mrs|ms|miss|engr|sir)\b\.?/g,' ').replace(/[^a-z]/g,'');
 }
+// Same person even if the website adds a middle name ("Mr. Muhammad Akbar Saeed"
+// vs "Mr. Akbar Saeed") or spells titles differently: exact key match, else
+// every word of the shorter name (at least 2 words) appears in the longer one.
+function invigNameTokens(n){ return String(n||'').toLowerCase().replace(/\(.*?\)/g,' ').replace(/\b(prof|dr|mr|mrs|ms|miss|engr|sir)\b\.?/g,' ').replace(/[^a-z\s]/g,' ').split(/\s+/).filter(w=>w.length>1); }
+function invigFindStaff(name){
+  const v=invigState(); const k=invigNameKey(name);
+  let s=v.staff.find(x=>invigNameKey(x.name)===k); if(s) return s;
+  const t=invigNameTokens(name); if(t.length<2) return null;
+  const hits=v.staff.filter(x=>{ const u=invigNameTokens(x.name); if(u.length<2) return false; const [a,b]=t.length<=u.length?[t,u]:[u,t]; return a.every(w=>b.includes(w)); });
+  return hits.length===1?hits[0]:null;
+}
 function invigCleanName(n){
   return String(n||'').replace(/\s+/g,' ').trim().replace(/\b(Mr|Ms|Mrs|Dr|Prof|Engr)\.(?=[A-Za-z])/g,'$1. ');
 }
@@ -8060,7 +8072,7 @@ function invigImportList(A, docText, fileName){
   const noEveningNote=/female/i.test(docText||'') && /evening/i.test(docText||'');
   const v=invigState(); let added=0, updated=0, noEve=0;
   people.forEach(p=>{
-    let s=v.staff.find(x=>invigNameKey(x.name)===invigNameKey(p.name));
+    let s=invigFindStaff(p.name);
     if(!s){ s={id:uid(),name:p.name,designation:'',dept:'',limit:v.defaultLimit,duty:{}}; v.staff.push(s); added++; } else updated++;
     if(p.designation) s.designation=p.designation;
     if(p.dept) s.dept=p.dept;
@@ -8227,6 +8239,147 @@ function invigDesigPanelHTML(){
       <button class="btn ghost" onclick="invigAddAllDesigRules()">Add all designations from roster</button>
     </div>
   </details>`;
+}
+
+
+/* ---- Fetch faculty for the roster from the DHA Suffa University website ---- */
+const DSU_FACULTY_PAGES=[
+  {code:'MS',label:'Management Sciences',url:'https://www.dsu.edu.pk/faculty-of-management-sciences/'},
+  {code:'EE',label:'Electrical Engineering',url:'https://www.dsu.edu.pk/faculty-of-electrical-engineering/'},
+  {code:'ME',label:'Mechanical Engineering',url:'https://www.dsu.edu.pk/faculty-of-mech/'},
+  {code:'CE',label:'Civil Engineering',url:'https://www.dsu.edu.pk/faculty-of-civil/'},
+  {code:'ARCH',label:'Architecture',url:'https://www.dsu.edu.pk/faculty-of-architecture/'},
+  {code:'BS',label:'Basic Sciences',url:'https://www.dsu.edu.pk/faculty-of-basic-sciences/'},
+  {code:'CS',label:'Computer Science',url:'https://www.dsu.edu.pk/faculty-of-computer-science-2/'},
+  {code:'CS',label:'Computer Science (DCK campus)',url:'https://www.dsu.edu.pk/faculty-of-computer-science-dck/'},
+  {code:'SE',label:'Software Engineering',url:'https://www.dsu.edu.pk/faculty-of-software-eng-dep/'},
+  {code:'AI',label:'Artificial Intelligence',url:'https://www.dsu.edu.pk/faculty-of-artificial-intelligence-dep/'},
+  {code:'HU',label:'Humanities & Social Sciences',url:'https://www.dsu.edu.pk/dep-of-hss/'},
+  {code:'PSY',label:'Psychology',url:'https://www.dsu.edu.pk/dep-of-psy/'}
+];
+let _dsuWeb={open:false,idx:0,url:DSU_FACULTY_PAGES[0].url,code:'MS',status:'',results:[],overwrite:false,busy:false};
+const DSU_DESIG_RE=/(associate\s+professor|assistant\s+professor|professor|senior\s+lecturer|junior\s+lecturer|lecturer|lab\s+engineer|lab\s+instructor|lab\s+supervisor|lab\s+assistant|instructor|adjunct\s+faculty|visiting\s+faculty|teaching\s+assistant|research\s+associate|dean|director|head\s+of\s+department|\bhod\b|program\s+manager|coordinator)/i;
+function dsuBaseDesignation(t){
+  const s=String(t||'');
+  const order=[/associate\s+professor/i,/assistant\s+professor/i,/senior\s+lecturer/i,/junior\s+lecturer/i,/\blecturer\b/i,/\bprofessor\b/i,/lab\s+engineer/i,/lab\s+instructor/i,/lab\s+supervisor/i,/lab\s+assistant/i,/\binstructor\b/i,/adjunct\s+faculty/i,/visiting\s+faculty/i,/teaching\s+assistant/i,/research\s+associate/i];
+  for(const re of order){ const m=s.match(re); if(m) return m[0].replace(/\s+/g,' ').replace(/\b\w/g,c=>c.toUpperCase()).replace(/\bOf\b/g,'of'); }
+  return s.replace(/\s+/g,' ').trim();
+}
+// Turn a DSU faculty page (HTML, or text pasted/converted from it) into
+// [{name, title}] pairs: a name line followed by its designation line.
+function dsuParseFaculty(raw){
+  const src=String(raw||'');
+  let lines=[];
+  if(/<h[1-6][\s>]/i.test(src)){
+    const dom=new DOMParser().parseFromString(src,'text/html');
+    lines=[...dom.querySelectorAll('h1,h2,h3,h4,h5,h6')].map(h=>h.textContent);
+  }
+  if(lines.length<4) lines=src.replace(/<[^>]+>/g,'\n').split(/\n+/);
+  lines=lines.map(l=>l.replace(/^[#>*\-\s\d.)]+/,'').replace(/[*_`]/g,'').replace(/!\[[^\]]*\]\([^)]*\)/g,'').replace(/\[([^\]]*)\]\([^)]*\)/g,'$1').replace(/\s+/g,' ').trim())
+    .filter(l=>l && l.length<120 && !/^(see more|read more|faculty|home|contact|menu|apply now|email|phone|qualification)/i.test(l));
+  const isTitle=l=>DSU_DESIG_RE.test(l) && !/^(prof|dr|mr|ms|mrs|miss|engr)\.?\s/i.test(l.replace(/^(prof\.?\s+dr\.?)/i,'dr '));
+  const isName=l=>/^(prof\.?|dr\.?|mr\.?|ms\.?|mrs\.?|miss|engr\.?|sir)\s+\S/i.test(l) || (/^[A-Z][A-Za-z.'\- ]{2,40}$/.test(l) && !isTitle(l) && l.split(' ').length<=6);
+  const out=[], seen=new Set();
+  for(let i=0;i<lines.length-1;i++){
+    const a=lines[i], b=lines[i+1];
+    if(isName(a) && !isTitle(a) && isTitle(b)){
+      const name=invigCleanName(a); const key=invigNameKey(name);
+      if(key && !seen.has(key)){ seen.add(key); out.push({name,title:b.replace(/\s+/g,' ').trim()}); }
+      i++;
+    }
+  }
+  return out;
+}
+async function dsuFetchText(url){
+  const tries=[
+    {how:'direct', u:url},
+    {how:'proxy (allorigins)', u:'https://api.allorigins.win/raw?url='+encodeURIComponent(url)},
+    {how:'proxy (corsproxy)', u:'https://corsproxy.io/?url='+encodeURIComponent(url)},
+    {how:'reader (r.jina.ai)', u:'https://r.jina.ai/'+url}
+  ];
+  const errs=[];
+  for(const t of tries){
+    try{
+      const ctl=new AbortController(); const timer=setTimeout(()=>ctl.abort(),15000);
+      const res=await fetch(t.u,{signal:ctl.signal}); clearTimeout(timer);
+      if(!res.ok){ errs.push(`${t.how}: HTTP ${res.status}`); continue; }
+      const txt=await res.text();
+      if(dsuParseFaculty(txt).length) return {txt,how:t.how};
+      errs.push(`${t.how}: no faculty found in page`);
+    }catch(e){ errs.push(`${t.how}: ${e.name==='AbortError'?'timed out':'blocked'}`); }
+  }
+  throw new Error(errs.join(' · '));
+}
+async function dsuWebFetch(){
+  const url=(_dsuWeb.url||'').trim();
+  if(!/^https?:\/\//i.test(url)){ toast('Enter a valid DSU page URL','warn'); return; }
+  _dsuWeb.busy=true; _dsuWeb.status='⏳ Fetching '+url+' …'; renderInvigilation();
+  try{
+    const {txt,how}=await dsuFetchText(url);
+    const list=dsuParseFaculty(txt);
+    dsuSetResults(list); _dsuWeb.status=`✓ ${list.length} faculty found (via ${how}). Untick anyone you don't want, then click “Add ticked to roster”.`;
+  }catch(e){
+    _dsuWeb.status=`⚠ The browser could not read the DSU page directly (${e.message}). Click “Open page”, press Ctrl+A then Ctrl+C on that page, paste it into the box below and click “Read pasted page”.`;
+  }
+  _dsuWeb.busy=false; renderInvigilation();
+}
+function dsuSetResults(list){
+  const v=invigState();
+  _dsuWeb.results=list.map(p=>{
+    const ex=invigFindStaff(p.name);
+    return {name:p.name,title:p.title,designation:dsuBaseDesignation(p.title),dept:_dsuWeb.code,tick:!/on\s+leave|adjunct/i.test(p.title),exists:!!ex};
+  });
+}
+function dsuParsePasted(){
+  const ta=document.getElementById('dsuPaste'); const txt=ta?ta.value:'';
+  const list=dsuParseFaculty(txt);
+  if(!list.length){ toast('No “name + designation” pairs found in the pasted text','warn'); return; }
+  dsuSetResults(list); _dsuWeb.status=`✓ ${list.length} faculty read from the pasted page.`; renderInvigilation();
+}
+function dsuPickPage(i){ const p=DSU_FACULTY_PAGES[+i]; if(!p) return; _dsuWeb.idx=+i; _dsuWeb.url=p.url; _dsuWeb.code=p.code; _dsuWeb.results=[]; _dsuWeb.status=''; renderInvigilation(); }
+function dsuAddToRoster(){
+  const v=invigState(); let added=0, updated=0;
+  _dsuWeb.results.filter(r=>r.tick).forEach(r=>{
+    let s=invigFindStaff(r.name);
+    if(!s){ s={id:uid(),name:r.name,designation:r.designation,dept:deptShortCode(r.dept)||r.dept,limit:v.defaultLimit,duty:{},remarks:r.title}; v.staff.push(s); added++; }
+    else { if(_dsuWeb.overwrite||!s.designation) s.designation=r.designation; if(_dsuWeb.overwrite||!s.dept) s.dept=deptShortCode(r.dept)||r.dept; s.remarks=s.remarks||r.title; updated++; }
+  });
+  invigApplyDesigRules(); save(); _dsuWeb.results=_dsuWeb.results.map(r=>({...r,exists:true}));
+  renderInvigilation(); toast(`DSU website: ${added} added, ${updated} already in the roster${_dsuWeb.overwrite?' (designations updated)':''}`,'ok');
+}
+function dsuWebPanelHTML(){
+  if(!_dsuWeb.open) return '';
+  const w=_dsuWeb;
+  return `<div class="card" style="border:1.5px solid #0e7490;background:#f0fdfa">
+    <div class="row" style="justify-content:space-between;align-items:center"><h3 style="margin:0">🌐 Fetch faculty from the DHA Suffa University website (roster only)</h3><button class="btn sm ghost" onclick="_dsuWeb.open=false;renderInvigilation()">✕ Close</button></div>
+    <div class="desc">Reads the public faculty page of a department on dsu.edu.pk and lists each member's name and designation. Only the invigilation roster is changed — courses, timetable and seating are not touched.</div>
+    <div class="row" style="gap:10px;flex-wrap:wrap;align-items:end;margin-top:8px">
+      <label><b>Department page</b><br><select onchange="dsuPickPage(this.value)">${DSU_FACULTY_PAGES.map((p,i)=>`<option value="${i}" ${i===w.idx?'selected':''}>${esc(p.label)} (${p.code})</option>`).join('')}</select></label>
+      <label><b>Page URL</b><br><input value="${esc(w.url)}" style="min-width:360px" onchange="_dsuWeb.url=this.value"></label>
+      <label><b>Dept code</b><br><input value="${esc(w.code)}" style="width:70px" onchange="_dsuWeb.code=this.value.trim().toUpperCase()"></label>
+      <button class="btn" ${w.busy?'disabled':''} onclick="dsuWebFetch()">🔎 ${w.busy?'Fetching…':'Fetch from website'}</button>
+      <a class="btn ghost" href="${esc(w.url)}" target="_blank" rel="noopener">↗ Open page</a>
+    </div>
+    ${w.status?`<div class="desc" style="margin-top:8px;font-weight:600">${esc(w.status)}</div>`:''}
+    <details style="margin-top:8px" ${w.status.startsWith('⚠')?'open':''}><summary style="cursor:pointer">Paste the page instead (works even when the website blocks direct reading)</summary>
+      <textarea id="dsuPaste" rows="5" style="width:100%;margin-top:6px" placeholder="Open the DSU faculty page, press Ctrl+A, Ctrl+C, then paste here…"></textarea>
+      <button class="btn ghost sm" onclick="dsuParsePasted()">Read pasted page</button>
+    </details>
+    ${w.results.length?`<div class="tbl-wrap" style="margin-top:10px"><table>
+      <thead><tr><th><input type="checkbox" ${w.results.every(r=>r.tick)?'checked':''} onchange="_dsuWeb.results.forEach(r=>r.tick=this.checked);renderInvigilation()"></th><th>Name</th><th>Designation (for duties)</th><th>Title on website</th><th>Dept</th><th>Status</th></tr></thead>
+      <tbody>${w.results.map((r,i)=>`<tr>
+        <td><input type="checkbox" ${r.tick?'checked':''} onchange="_dsuWeb.results[${i}].tick=this.checked"></td>
+        <td><input value="${esc(r.name)}" onchange="_dsuWeb.results[${i}].name=this.value" style="width:210px"></td>
+        <td><input list="invDesList" value="${esc(r.designation)}" onchange="_dsuWeb.results[${i}].designation=this.value" style="width:170px"></td>
+        <td class="desc">${esc(r.title)}</td>
+        <td><input value="${esc(r.dept)}" onchange="_dsuWeb.results[${i}].dept=this.value" style="width:60px"></td>
+        <td>${r.exists?'<span class="badge">in roster</span>':'<span class="badge green">new</span>'}</td></tr>`).join('')}</tbody></table></div>
+      <div class="row" style="margin-top:8px;gap:10px;align-items:center">
+        <button class="btn green" onclick="dsuAddToRoster()">➕ Add ticked to roster</button>
+        <label style="font-size:12px"><input type="checkbox" ${w.overwrite?'checked':''} onchange="_dsuWeb.overwrite=this.checked"> Update designation/department of people already in the roster</label>
+        <span class="desc">Faculty marked “on leave” or “adjunct” are unticked by default.</span>
+      </div>`:''}
+  </div>`;
 }
 
 /* ---- Faculty-wise duty roster: one page per invigilator ---- */
