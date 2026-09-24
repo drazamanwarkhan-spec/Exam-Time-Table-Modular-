@@ -6045,9 +6045,80 @@ function pdfCourseWiseSeating(){
 }
 
 
-/* ================= DSU NOTICE BOARD — STANDALONE REPORTS ================= */
+/* ================= DSU NOTICE BOARD — STANDALONE REPORTS =================
+   Ordered DATE-WISE, then SUBJECT-WISE (session -> subject -> class -> room).
+   Every PDF page carries "Page X of Y" plus the date's own page count; the
+   Excel export gives each exam date its own worksheet with a printed footer
+   "Page &P of &N", and an Index sheet lists every date / subject block. */
+function reportNatCmp(a,b){ return String(a||'').localeCompare(String(b||''),undefined,{numeric:true,sensitivity:'base'}); }
+function noticeBoardSortedBlocks(){
+  return noticeBoardBlocks().sort((a,b)=>
+    String(a.dateText||'').localeCompare(String(b.dateText||'')) ||
+    (a.sessionOrder||1)-(b.sessionOrder||1) ||
+    reportNatCmp(a.courseTitle,b.courseTitle) ||
+    reportNatCmp(a.classLabel,b.classLabel) ||
+    reportNatCmp(a.roomName,b.roomName));
+}
+function attendanceSortedBlocks(){
+  return attendanceBlocks().sort((a,b)=>
+    String(a.dateText||'').localeCompare(String(b.dateText||'')) ||
+    (a.sessionOrder||1)-(b.sessionOrder||1) ||
+    reportNatCmp(a.roomName,b.roomName) ||
+    reportNatCmp(a.courseTitle,b.courseTitle) ||
+    reportNatCmp(a.classLabel,b.classLabel));
+}
+function reportGroupByDate(blocks){
+  const groups=[]; let cur=null;
+  blocks.forEach(b=>{ const d=b.dateText||''; if(!cur||cur.date!==d){ cur={date:d,blocks:[]}; groups.push(cur); } cur.blocks.push(b); });
+  return groups;
+}
+// Records which date / label each PDF page belongs to (pages from..to inclusive).
+function reportTrackPages(pageMeta,from,to,date,label){
+  for(let p=from;p<=to;p++){
+    const m=pageMeta[p]||(pageMeta[p]={date,labels:[]});
+    if(!m.labels.includes(label)) m.labels.push(label);
+  }
+}
+// Stamps a footer on every PDF page: date + page-within-date on the left,
+// subject / room in the middle, overall "Page X of Y" on the right.
+function reportStampPageFooters(doc,pageMeta,reportName){
+  const n=doc.getNumberOfPages();
+  const pw=doc.internal.pageSize.getWidth(), ph=doc.internal.pageSize.getHeight();
+  const perDate={}; for(let p=1;p<=n;p++){ const d=(pageMeta[p]||{}).date||''; perDate[d]=(perDate[d]||0)+1; }
+  const seen={};
+  for(let p=1;p<=n;p++){
+    doc.setPage(p);
+    const m=pageMeta[p]||{date:'',labels:[]};
+    const d=m.date||''; seen[d]=(seen[d]||0)+1;
+    const y=ph-14;
+    doc.setDrawColor(0,0,0).setLineWidth(.4); doc.line(30,y-10,pw-30,y-10);
+    doc.setFont('times','normal').setFontSize(8.5).setTextColor(0,0,0);
+    doc.text(`Date: ${reportDMY(d)}  (page ${seen[d]} of ${perDate[d]} for this date)`,30,y);
+    let mid=`${reportName}: ${m.labels.join(', ')}`;
+    const maxW=pw-30*2-260; while(mid.length>12 && doc.getTextWidth(mid)>maxW) mid=mid.slice(0,-2);
+    if(mid!==`${reportName}: ${m.labels.join(', ')}`) mid=mid.replace(/.$/,'…');
+    doc.text(mid,pw/2+20,y,{align:'center'});
+    doc.setFont('times','bold');
+    doc.text(`Page ${p} of ${n}`,pw-30,y,{align:'right'});
+  }
+}
+function reportSafeSheetName(name,used){
+  let base=String(name||'Sheet').replace(/[:\\/?*\[\]]/g,' ').slice(0,28).trim()||'Sheet', s=base, i=2;
+  while(used.has(s.toLowerCase())){ s=`${base.slice(0,25)} (${i++})`; }
+  used.add(s.toLowerCase()); return s;
+}
+function reportExcelFooter(ws,dateText,title){
+  const q=v=>String(v||'').replace(/&/g,'&&');
+  ws.headerFooter={differentFirst:false,differentOddEven:false,
+    oddFooter:`&L&"Times New Roman,Regular"&9Date: ${q(reportDMY(dateText))}&C&"Times New Roman,Regular"&9${q(title)}&R&"Times New Roman,Bold"&9Page &P of &N`};
+  // Manual page breaks are ignored by Excel when "Fit to page" is on, so a fixed
+  // scale is used instead (fits the B:G print area across one A4 portrait page).
+  ws.pageSetup={paperSize:9,orientation:'portrait',fitToPage:false,scale:70,horizontalCentered:true,firstPageNumber:1};
+  ws.pageMargins={left:.3,right:.3,top:.35,bottom:.55,header:.2,footer:.25};
+}
+
 function pdfNoticeBoard(){
-  const blocks=noticeBoardBlocks();
+  const blocks=noticeBoardSortedBlocks();
   if(!blocks.length){toast('No seating data yet -- run Generate Seating first','warn');return;}
   const doc=new jsPDF({unit:'pt',format:'a4',orientation:'portrait'});
   const pw=doc.internal.pageSize.getWidth();
@@ -6055,16 +6126,20 @@ function pdfNoticeBoard(){
   const margin=34;
   const contentW=pw-margin*2;
   const black=[0,0,0];
+  const pageMeta={};
   function setFont(size,bold=false){doc.setFont('times',bold?'bold':'normal');doc.setFontSize(size);doc.setTextColor(...black);}
   function center(text,y,size=14,bold=false){setFont(size,bold);doc.text(String(text??''),pw/2,y,{align:'center'});}
 
   const newPage=noticeBoardNewPage();
   blocks.forEach((b,bi)=>{
     let y=30;
-    // "Continue" mode: the next report follows on the same page when at least
-    // its heading, details and a few rows fit; otherwise it moves to the next page.
-    const fitsHere = !newPage && bi && (ph-30-(doc.lastAutoTable.finalY+26)) > 170;
+    // "Continue" mode: the next report follows on the same page when it is the
+    // SAME date and at least its heading, details and a few rows fit. A new
+    // exam date always starts on a new page.
+    const sameDate = bi && blocks[bi-1].dateText===b.dateText;
+    const fitsHere = !newPage && sameDate && (ph-40-(doc.lastAutoTable.finalY+26)) > 170;
     if(bi && !fitsHere) doc.addPage();
+    const startPage=doc.getNumberOfPages();
     if(fitsHere){
       y=doc.lastAutoTable.finalY+26;
       doc.setDrawColor(0,0,0).setLineWidth(.6); doc.line(margin,y-12,pw-margin,y-12);
@@ -6080,10 +6155,10 @@ function pdfNoticeBoard(){
     const meta=[
       [`Course Title: ${b.courseTitle||''}`,`Session: ${b.sessionText||''}`],
       [`Subject Teacher: ${b.faculty||''}`,`Time: ${b.timeText||''}`],
-      ['',`Date: ${reportDMY(b.dateText)}`]
+      [`Room No: ${b.roomName||'--'}`,`Date: ${reportDMY(b.dateText)}`]
     ];
     doc.autoTable({
-      body:meta,startY:y,margin:{left:margin,right:margin},theme:'plain',
+      body:meta,startY:y,margin:{left:margin,right:margin,bottom:40},theme:'plain',
       styles:{font:'times',fontSize:10.5,fontStyle:'bold',textColor:black,cellPadding:{top:2,right:4,bottom:3,left:4},valign:'middle',overflow:'linebreak'},
       columnStyles:{0:{cellWidth:contentW*.58,halign:'left'},1:{cellWidth:contentW*.42,halign:'left'}},
       didParseCell:d=>{d.cell.styles.minCellHeight=18;}
@@ -6093,19 +6168,22 @@ function pdfNoticeBoard(){
     const body=b.rows.map(r=>{ const rmk=combinedRemarks(r.reg,b.courseTitle); return [r.sno,r.reg,r.name,r.seat,b.roomName||r.room||'--',rmk]; });
     doc.autoTable({
       head:[['S.No.','Reg No.','Name','Seating Plan','Room No','Remarks']],
-      body,startY:y,margin:{left:margin,right:margin,bottom:30},theme:'grid',
+      body,startY:y,margin:{left:margin,right:margin,bottom:40},theme:'grid',
       styles:{font:'times',fontSize:9.2,cellPadding:{top:3,right:3,bottom:3,left:3},textColor:black,lineColor:black,lineWidth:.5,halign:'center',valign:'middle',overflow:'linebreak',minCellHeight:18},
       headStyles:{font:'times',fontStyle:'bold',fontSize:10,fillColor:[255,255,255],textColor:black,lineColor:black,lineWidth:.7,halign:'center',valign:'middle'},
       columnStyles:{0:{cellWidth:35},1:{cellWidth:65},2:{cellWidth:126,halign:'left'},3:{cellWidth:84},4:{cellWidth:58},5:{cellWidth:151,halign:'left'}},
       rowPageBreak:'avoid',showHead:'everyPage'
     });
+    reportTrackPages(pageMeta,startPage,doc.getNumberOfPages(),b.dateText,b.courseTitle||b.classLabel||'');
   });
+  reportStampPageFooters(doc,pageMeta,'Subject');
   doc.save('notice-board-DSU.pdf');
-  toast(`Downloaded standalone DSU Notice Board PDF — ${blocks.length} report(s), ${doc.getNumberOfPages()} page(s), ${newPage?'each on a new page':'continuous'}`,'ok');
+  const days=reportGroupByDate(blocks).length;
+  toast(`Downloaded DSU Notice Board PDF — date-wise & subject-wise, ${days} date(s), ${blocks.length} report(s), ${doc.getNumberOfPages()} numbered page(s)`,'ok');
 }
 
 async function xlsxNoticeBoard(){
-  const blocks=noticeBoardBlocks();
+  const blocks=noticeBoardSortedBlocks();
   if(!blocks.length){toast('No seating data yet -- run Generate Seating first','warn');return;}
   if(typeof ExcelJS==='undefined'){toast('Excel export library is not available. Please reload the app.','err');return;}
   const wb=new ExcelJS.Workbook();
@@ -6120,36 +6198,61 @@ async function xlsxNoticeBoard(){
   const headFont={name:'Times New Roman',size:11,bold:true};
   const center={horizontal:'center',vertical:'middle',wrapText:true};
   const left={horizontal:'left',vertical:'middle',wrapText:true};
-  const ws=wb.addWorksheet('Notice Board');
-  [2,11,14,38,17,16,40].forEach((w,i)=>ws.getColumn(i+1).width=w);
-  ws.pageSetup={paperSize:ws.PAPERSIZE_A4,orientation:'portrait',fitToPage:true,fitToWidth:1,fitToHeight:0};
-  ws.pageMargins={left:.25,right:.25,top:.25,bottom:.25,header:0,footer:0};
-  ws.views=[{showGridLines:false}];
-  function merge(row,a,b,value,font=bodyFont,alignment=center,height=24){ws.mergeCells(row,a,row,b);const c=ws.getCell(row,a);c.value=value;c.font=font;c.alignment=alignment;ws.getRow(row).height=height;}
-  let r=1;
-  merge(r,2,7,state.uniName||'DHA SUFFA UNIVERSITY',titleFont,center,27);r++;
-  merge(r,2,7,reportExamTitle(),examFont,center,22);r++;
-  merge(r,2,7,excelDepartmentHeaderLabel(),{name:'Times New Roman',size:13,bold:true},center,20);r++;
-  merge(r,2,7,'SEATING PLAN',sectionFont,center,25);r++;
   const nbNewPage=noticeBoardNewPage();
-  blocks.forEach((b,bi)=>{
-    if(bi){ if(nbNewPage) ws.getRow(r-1).addPageBreak(); else r++; }
-    merge(r,2,7,b.classLabel||'',sectionFont,center,25);r++;
-    ws.mergeCells(r,2,r,3);ws.getCell(r,2).value='Course Title:';ws.getCell(r,2).font=labelFont;ws.getCell(r,2).alignment=left;
-    ws.mergeCells(r,4,r,5);ws.getCell(r,4).value=b.courseTitle||'';ws.getCell(r,4).font=labelFont;ws.getCell(r,4).alignment=left;
-    ws.getCell(r,6).value='Session:';ws.getCell(r,6).font=labelFont;ws.getCell(r,6).alignment=left;ws.getCell(r,7).value=b.sessionText||'';ws.getCell(r,7).font=labelFont;ws.getCell(r,7).alignment=left;ws.getRow(r).height=30;r++;
-    ws.mergeCells(r,2,r,3);ws.getCell(r,2).value='Subject Teacher:';ws.getCell(r,2).font=labelFont;ws.getCell(r,2).alignment=left;
-    ws.mergeCells(r,4,r,5);ws.getCell(r,4).value=b.faculty||'';ws.getCell(r,4).font=labelFont;ws.getCell(r,4).alignment=left;
-    ws.getCell(r,6).value='Time:';ws.getCell(r,6).font=labelFont;ws.getCell(r,6).alignment=left;ws.getCell(r,7).value=b.timeText||'';ws.getCell(r,7).font=labelFont;ws.getCell(r,7).alignment=left;ws.getRow(r).height=30;r++;
-    ws.getCell(r,6).value='Date:';ws.getCell(r,6).font=labelFont;ws.getCell(r,6).alignment=left;ws.getCell(r,7).value=reportDMY(b.dateText);ws.getCell(r,7).font=labelFont;ws.getCell(r,7).alignment=left;ws.getRow(r).height=24;r++;
-    ['S.No.','Reg No.','Name','Seating Plan','Room No','Remarks'].forEach((v,c)=>{const cell=ws.getCell(r,c+2);cell.value=v;cell.font=headFont;cell.alignment=center;cell.border=border;});ws.getRow(r).height=25;r++;
-    b.rows.forEach(row=>{const rmk=combinedRemarks(row.reg,b.courseTitle); [row.sno,row.reg,row.name,row.seat,b.roomName||row.room||'--',rmk].forEach((v,c)=>{const cell=ws.getCell(r,c+2);cell.value=v;cell.font=bodyFont;cell.alignment=c===2?left:center;cell.border=border;if(c===5&&rmk)cell.font={name:'Times New Roman',size:10,bold:true,color:{argb:'FFB91C1C'}};});ws.getRow(r).height=24;r++;});
+  const groups=reportGroupByDate(blocks);
+  const used=new Set();
+
+  // Index sheet: one row per date / subject / room block, pointing at its date sheet.
+  const idx=wb.addWorksheet(reportSafeSheetName('Index',used));
+  [6,20,16,40,18,14,10,22].forEach((w,i)=>idx.getColumn(i+1).width=w);
+  idx.mergeCells(1,1,1,8); idx.getCell(1,1).value=`${state.uniName||'DHA SUFFA UNIVERSITY'} — NOTICE BOARD INDEX (Date-wise / Subject-wise)`; idx.getCell(1,1).font=examFont; idx.getCell(1,1).alignment=center; idx.getRow(1).height=26;
+  ['S.No.','Date','Session','Subject','Class','Room No','Students','Sheet'].forEach((v,c)=>{const cell=idx.getCell(2,c+1);cell.value=v;cell.font=headFont;cell.alignment=center;cell.border=border;cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFE5E7EB'}};});
+  idx.views=[{state:'frozen',ySplit:2,showGridLines:false}];
+  let ir=3, isno=1;
+
+  groups.forEach(g=>{
+    const sheetName=reportSafeSheetName(reportDMY(g.date)||'No Date',used);
+    const ws=wb.addWorksheet(sheetName);
+    [2,11,14,38,17,16,40].forEach((w,i)=>ws.getColumn(i+1).width=w);
+    ws.views=[{showGridLines:false}];
+    reportExcelFooter(ws,g.date,'Notice Board — Subject-wise');
+    function merge(row,a,b,value,font=bodyFont,alignment=center,height=24){ws.mergeCells(row,a,row,b);const c=ws.getCell(row,a);c.value=value;c.font=font;c.alignment=alignment;ws.getRow(row).height=height;}
+    let r=1;
+    const topHeader=()=>{
+      merge(r,2,7,state.uniName||'DHA SUFFA UNIVERSITY',titleFont,center,27);r++;
+      merge(r,2,7,reportExamTitle(),examFont,center,22);r++;
+      merge(r,2,7,excelDepartmentHeaderLabel(),{name:'Times New Roman',size:13,bold:true},center,20);r++;
+      merge(r,2,7,'SEATING PLAN',sectionFont,center,25);r++;
+    };
+    topHeader();
+    g.blocks.forEach((b,bi)=>{
+      if(bi){ if(nbNewPage){ ws.getRow(r-1).addPageBreak(); topHeader(); } else r++; }
+      merge(r,2,7,b.classLabel||'',sectionFont,center,25);r++;
+      ws.mergeCells(r,2,r,3);ws.getCell(r,2).value='Course Title:';ws.getCell(r,2).font=labelFont;ws.getCell(r,2).alignment=left;
+      ws.mergeCells(r,4,r,5);ws.getCell(r,4).value=b.courseTitle||'';ws.getCell(r,4).font=labelFont;ws.getCell(r,4).alignment=left;
+      ws.getCell(r,6).value='Session:';ws.getCell(r,6).font=labelFont;ws.getCell(r,6).alignment=left;ws.getCell(r,7).value=b.sessionText||'';ws.getCell(r,7).font=labelFont;ws.getCell(r,7).alignment=left;ws.getRow(r).height=30;r++;
+      ws.mergeCells(r,2,r,3);ws.getCell(r,2).value='Subject Teacher:';ws.getCell(r,2).font=labelFont;ws.getCell(r,2).alignment=left;
+      ws.mergeCells(r,4,r,5);ws.getCell(r,4).value=b.faculty||'';ws.getCell(r,4).font=labelFont;ws.getCell(r,4).alignment=left;
+      ws.getCell(r,6).value='Time:';ws.getCell(r,6).font=labelFont;ws.getCell(r,6).alignment=left;ws.getCell(r,7).value=b.timeText||'';ws.getCell(r,7).font=labelFont;ws.getCell(r,7).alignment=left;ws.getRow(r).height=30;r++;
+      ws.mergeCells(r,2,r,3);ws.getCell(r,2).value='Room No:';ws.getCell(r,2).font=labelFont;ws.getCell(r,2).alignment=left;
+      ws.mergeCells(r,4,r,5);ws.getCell(r,4).value=b.roomName||'--';ws.getCell(r,4).font=labelFont;ws.getCell(r,4).alignment=left;
+      ws.getCell(r,6).value='Date:';ws.getCell(r,6).font=labelFont;ws.getCell(r,6).alignment=left;ws.getCell(r,7).value=reportDMY(b.dateText);ws.getCell(r,7).font=labelFont;ws.getCell(r,7).alignment=left;ws.getRow(r).height=24;r++;
+      ['S.No.','Reg No.','Name','Seating Plan','Room No','Remarks'].forEach((v,c)=>{const cell=ws.getCell(r,c+2);cell.value=v;cell.font=headFont;cell.alignment=center;cell.border=border;});ws.getRow(r).height=25;r++;
+      b.rows.forEach(row=>{const rmk=combinedRemarks(row.reg,b.courseTitle); [row.sno,row.reg,row.name,row.seat,b.roomName||row.room||'--',rmk].forEach((v,c)=>{const cell=ws.getCell(r,c+2);cell.value=v;cell.font=bodyFont;cell.alignment=c===2?left:center;cell.border=border;if(c===5&&rmk)cell.font={name:'Times New Roman',size:10,bold:true,color:{argb:'FFB91C1C'}};});ws.getRow(r).height=24;r++;});
+      [isno++,reportDMY(b.dateText),b.sessionText||'',b.courseTitle||'',b.classLabel||'',b.roomName||'--',b.rows.length,sheetName].forEach((v,c)=>{const cell=idx.getCell(ir,c+1);cell.value=v;cell.font=bodyFont;cell.alignment=c===3?left:center;cell.border=border;});
+      idx.getCell(ir,8).value={text:sheetName,hyperlink:`#'${sheetName.replace(/'/g,"''")}'!A1`}; idx.getCell(ir,8).font={name:'Times New Roman',size:11,color:{argb:'FF1D4ED8'},underline:true};
+      ir++;
+    });
+    ws.pageSetup.printArea=`B1:G${r-1}`;
   });
-  ws.printArea=`B1:G${r-1}`;
+  reportExcelFooter(idx,'','Notice Board Index');
+  idx.headerFooter={oddFooter:'&L&"Times New Roman,Regular"&9Notice Board Index&R&"Times New Roman,Bold"&9Page &P of &N'};
+  idx.pageSetup.printTitlesRow='2:2';
+
   const buf=await wb.xlsx.writeBuffer();
   const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='notice-board-DSU.xlsx';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
-  toast(`Downloaded standalone DSU Notice Board Excel — ${blocks.length} report block(s)`,'ok');
+  toast(`Downloaded DSU Notice Board Excel — ${groups.length} date sheet(s), ${blocks.length} subject block(s), page numbers in footer`,'ok');
 }
 
 /* ================= DSU COURSE / FACULTY SUMMARY REPORTS =================
@@ -6689,7 +6792,10 @@ async function xlsxDepartmentSummary(){
   const buf=await wb.xlsx.writeBuffer();const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));a.download='department-wise-summary-course-DSU.xlsx';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);toast('Downloaded Department-wise Summary Course Excel','ok');
 }
 
-/* ================= DSU ATTENDANCE SHEET PDF ================= */
+/* ================= DSU ATTENDANCE SHEET PDF =================
+   Ordered DATE-WISE, then ROOM-WISE (session -> room -> subject). Each
+   room/course sheet starts on a new page; every page carries "Page X of Y"
+   plus the date's own page count and the room number in the footer. */
 function attendanceBlocks(){
   const blocks=[];
   buildSeatingPlanBlocks().forEach(b=>{
@@ -6700,19 +6806,20 @@ function attendanceBlocks(){
   return blocks;
 }
 function pdfAttendanceSheets(){
-  const blocks=attendanceBlocks();
+  const blocks=attendanceSortedBlocks();
   if(!blocks.length){toast('No seating data yet -- run Generate Seating first','warn');return;}
   const doc=new jsPDF({unit:'pt',format:'a4',orientation:'portrait'});
   const pw=doc.internal.pageSize.getWidth(), ph=doc.internal.pageSize.getHeight();
   const left=34, right=34, contentW=pw-left-right;
   const black=[0,0,0];
-  const times={name:'times',style:'normal'}, timesBold={name:'times',style:'bold'};
+  const pageMeta={};
 
   function setFont(size,bold=false){ doc.setFont('times',bold?'bold':'normal'); doc.setFontSize(size); doc.setTextColor(...black); }
   function center(text,y,size=14,bold=false){ setFont(size,bold); doc.text(String(text??''),pw/2,y,{align:'center'}); }
 
   blocks.forEach((b,bi)=>{
     if(bi) doc.addPage();
+    const startPage=doc.getNumberOfPages();
     let y=28;
 
     center(state.uniName||'DHA SUFFA UNIVERSITY',y+12,18,true); y+=34;
@@ -6725,12 +6832,12 @@ function pdfAttendanceSheets(){
     const metaRows=[
       [`Course Title: ${b.courseTitle||''}`,`Session: ${b.sessionText||''}`],
       [`Subject Teacher: ${b.faculty||''}`,`Time: ${b.timeText||''}`],
-      ['',`Date: ${reportDMY(b.dateText)}`]
+      [`Room No: ${b.roomName||'--'}`,`Date: ${reportDMY(b.dateText)}`]
     ];
     doc.autoTable({
       body:metaRows,
       startY:y,
-      margin:{left,right},
+      margin:{left,right,bottom:40},
       theme:'plain',
       styles:{font:'times',fontSize:11.5,fontStyle:'bold',textColor:black,cellPadding:{top:2,right:4,bottom:3,left:4},valign:'middle',overflow:'linebreak'},
       columnStyles:{0:{cellWidth:contentW*0.58,halign:'left'},1:{cellWidth:contentW*0.42,halign:'left'}},
@@ -6742,7 +6849,7 @@ function pdfAttendanceSheets(){
     const data=b.rows.map(r=>[r.sno,r.reg,r.name,r.seat,'','']);
     doc.autoTable({
       head:[head], body:data, startY:y,
-      margin:{left,right,bottom:34},
+      margin:{left,right,bottom:40},
       theme:'grid',
       styles:{font:'times',fontSize:9.2,cellPadding:{top:3,right:3,bottom:3,left:3},textColor:black,lineColor:black,lineWidth:.5,halign:'center',valign:'middle',overflow:'linebreak',minCellHeight:18},
       headStyles:{font:'times',fontStyle:'bold',fontSize:10,fillColor:[255,255,255],textColor:black,lineColor:black,lineWidth:.7,halign:'center',valign:'middle'},
@@ -6753,18 +6860,18 @@ function pdfAttendanceSheets(){
     y=doc.lastAutoTable.finalY+12;
 
     // Script-count section, matching the DSU attendance-sheet terminology.
-    if(y+65>ph-34){doc.addPage();y=40;}
+    if(y+65>ph-40){doc.addPage();y=40;}
     doc.autoTable({
       head:[['Class','Total Student','No.of Subj.Scripts','','No.of Obj.Scripts','Total']],
       body:[[b.classLabel||'',b.rows.length,'','','','']],
-      startY:y, margin:{left,right}, theme:'grid',
+      startY:y, margin:{left,right,bottom:40}, theme:'grid',
       styles:{font:'times',fontSize:9,cellPadding:3,textColor:black,lineColor:black,lineWidth:.5,halign:'center',valign:'middle',overflow:'linebreak'},
       headStyles:{font:'times',fontStyle:'bold',fontSize:9,fillColor:[255,255,255],textColor:black,lineColor:black,lineWidth:.5},
       columnStyles:{0:{cellWidth:72},1:{cellWidth:82},2:{cellWidth:88},3:{cellWidth:18},4:{cellWidth:88},5:{cellWidth:72}}
     });
     y=doc.lastAutoTable.finalY+18;
 
-    if(y+145>ph-30){doc.addPage();y=42;}
+    if(y+145>ph-40){doc.addPage();y=42;}
     setFont(11.5,true);
     doc.text('Name of Invigilator(s):',left,y);
     doc.text('Signature of Invigilator(s)',pw/2+8,y);
@@ -6775,14 +6882,20 @@ function pdfAttendanceSheets(){
     doc.text('Name of Person Receiving: ________________________',left,y);
     y+=22; doc.text('Signature of Person Receiving: _____________________',left,y);
     y+=22; doc.text('Date: ________________',left,y);
+    reportTrackPages(pageMeta,startPage,doc.getNumberOfPages(),b.dateText,`${b.roomName||'--'} (${b.classLabel||b.courseTitle||''})`);
   });
+  reportStampPageFooters(doc,pageMeta,'Room');
   doc.save('attendance-sheets-DSU.pdf');
-  toast(`Downloaded DSU Attendance Sheet PDF — ${blocks.length} room/course page(s)`,'ok');
+  const days=reportGroupByDate(blocks).length;
+  toast(`Downloaded DSU Attendance Sheet PDF — date-wise & room-wise, ${days} date(s), ${blocks.length} sheet(s), ${doc.getNumberOfPages()} numbered page(s)`,'ok');
 }
 
-/* ================= DSU ATTENDANCE SHEET EXCEL ================= */
+/* ================= DSU ATTENDANCE SHEET EXCEL =================
+   One worksheet per exam DATE; inside it, one room/course sheet per printed
+   page (page breaks between them), ordered room-wise. Footer prints
+   "Page &P of &N". An Index sheet lists every date / room / course. */
 async function xlsxAttendanceSheets(){
-  const blocks=attendanceBlocks();
+  const blocks=attendanceSortedBlocks();
   if(!blocks.length){toast('No seating data yet -- run Generate Seating first','warn');return;}
   if(typeof ExcelJS==='undefined'){toast('Excel export library is not available. Please reload the app.','err');return;}
   const wb=new ExcelJS.Workbook();
@@ -6799,51 +6912,68 @@ async function xlsxAttendanceSheets(){
   const headFont={name:'Times New Roman',size:11,bold:true};
   const center={horizontal:'center',vertical:'middle',wrapText:true};
   const leftAlign={horizontal:'left',vertical:'middle',wrapText:true};
+  const groups=reportGroupByDate(blocks);
+  const used=new Set();
 
-  function setup(ws){
-    [1,10,13,38,17,16,38].forEach((w,i)=>ws.getColumn(i+1).width=w);
-    ws.pageSetup={paperSize:ws.PAPERSIZE_A4,orientation:'portrait',fitToPage:true,fitToWidth:1,fitToHeight:0};
-    ws.pageMargins={left:.25,right:.25,top:.25,bottom:.25,header:0,footer:0};
-    ws.views=[{showGridLines:false}];
-  }
   function merge(ws,row,a,b,value,font,alignment=center,height=24){
     ws.mergeCells(row,a,row,b); const c=ws.getCell(row,a); c.value=value; c.font=font; c.alignment=alignment; ws.getRow(row).height=height;
   }
-  blocks.forEach((b,bi)=>{
-    // One worksheet per room/course keeps the exported attendance sheets directly printable.
-    const safe=(b.classLabel||'Course').replace(/[:\\/?*\[\]]/g,' ').slice(0,20);
-    const ws=wb.addWorksheet(`${String(bi+1).padStart(2,'0')} ${safe}`); setup(ws);
+
+  const idx=wb.addWorksheet(reportSafeSheetName('Index',used));
+  [6,20,16,12,18,40,10,22].forEach((w,i)=>idx.getColumn(i+1).width=w);
+  idx.mergeCells(1,1,1,8); idx.getCell(1,1).value=`${state.uniName||'DHA SUFFA UNIVERSITY'} — ATTENDANCE SHEETS INDEX (Date-wise / Room-wise)`; idx.getCell(1,1).font=examFont; idx.getCell(1,1).alignment=center; idx.getRow(1).height=26;
+  ['S.No.','Date','Session','Room No','Class','Subject','Students','Sheet'].forEach((v,c)=>{const cell=idx.getCell(2,c+1);cell.value=v;cell.font=headFont;cell.alignment=center;cell.border=border;cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFE5E7EB'}};});
+  idx.views=[{state:'frozen',ySplit:2,showGridLines:false}];
+  let ir=3, isno=1;
+
+  groups.forEach(g=>{
+    const sheetName=reportSafeSheetName(reportDMY(g.date)||'No Date',used);
+    const ws=wb.addWorksheet(sheetName);
+    [1,10,13,38,17,16,38].forEach((w,i)=>ws.getColumn(i+1).width=w);
+    ws.views=[{showGridLines:false}];
+    reportExcelFooter(ws,g.date,'Attendance Sheets — Room-wise');
     let r=1;
-    merge(ws,r,2,7,state.uniName||'DHA SUFFA UNIVERSITY',titleFont,center,27); r++;
-    merge(ws,r,2,7,reportExamTitle(),examFont,center,22); r++;
-    merge(ws,r,2,7,excelDepartmentHeaderLabel(),{name:'Times New Roman',size:13,bold:true},center,20); r++;
-    merge(ws,r,2,7,`ATTENDANCE SHEET ROOM # ${b.roomName||'--'}`,sectionFont,center,25); r++;
-    merge(ws,r,2,7,b.classLabel||'',sectionFont,center,25); r++;
-    ws.mergeCells(r,2,r,4); ws.getCell(r,2).value='Course Title:'; ws.getCell(r,2).font=labelFont; ws.getCell(r,2).alignment=leftAlign;
-    ws.mergeCells(r,5,r,6); ws.getCell(r,5).value=b.courseTitle||''; ws.getCell(r,5).font=labelFont; ws.getCell(r,5).alignment=leftAlign;
-    ws.getCell(r,7).value=`Session: ${b.sessionText||''}`; ws.getCell(r,7).font=labelFont; ws.getCell(r,7).alignment=leftAlign; ws.getRow(r).height=30; r++;
-    ws.mergeCells(r,2,r,4); ws.getCell(r,2).value='Subject Teacher:'; ws.getCell(r,2).font=labelFont; ws.getCell(r,2).alignment=leftAlign;
-    ws.mergeCells(r,5,r,6); ws.getCell(r,5).value=b.faculty||''; ws.getCell(r,5).font=labelFont; ws.getCell(r,5).alignment=leftAlign;
-    ws.getCell(r,7).value=`Time: ${b.timeText||''}`; ws.getCell(r,7).font=labelFont; ws.getCell(r,7).alignment=leftAlign; ws.getRow(r).height=30; r++;
-    ws.getCell(r,6).value='Date:'; ws.getCell(r,6).font=labelFont; ws.getCell(r,6).alignment=leftAlign; ws.getCell(r,7).value=reportDMY(b.dateText); ws.getCell(r,7).font=labelFont; ws.getCell(r,7).alignment=leftAlign; ws.getRow(r).height=24; r++;
-    ['S.No.','Reg No.','Name','Seating Plan','Copy No.','Signature / Remarks'].forEach((v,c)=>{const cell=ws.getCell(r,c+2);cell.value=v;cell.font=headFont;cell.alignment=center;cell.border=border;}); ws.getRow(r).height=26; r++;
-    b.rows.forEach(row=>{[row.sno,row.reg,row.name,row.seat,'',''].forEach((v,c)=>{const cell=ws.getCell(r,c+2);cell.value=v;cell.font=bodyFont;cell.alignment=c===2?leftAlign:center;cell.border=border;});ws.getRow(r).height=24;r++;});
-    r++;
-    ['Class','Total Student','No.of Subj.Scripts','','No.of Obj.Scripts','Total'].forEach((v,c)=>{const cell=ws.getCell(r,c+2);cell.value=v;cell.font=headFont;cell.alignment=center;cell.border=border;}); r++;
-    [b.classLabel||'',b.rows.length,'','','',''].forEach((v,c)=>{const cell=ws.getCell(r,c+2);cell.value=v;cell.font=bodyFont;cell.alignment=center;cell.border=border;}); r+=2;
-    ws.mergeCells(r,2,r,4); ws.getCell(r,2).value='Name of Invigilator(s):'; ws.getCell(r,2).font=labelFont; ws.getCell(r,2).alignment=leftAlign;
-    ws.mergeCells(r,5,r,7); ws.getCell(r,5).value='Signature of Invigilator(s)'; ws.getCell(r,5).font=labelFont; ws.getCell(r,5).alignment=leftAlign; r++;
-    merge(ws,r,2,4,'1. _____________',bodyFont,leftAlign,24); merge(ws,r,5,7,'1. _____________',bodyFont,leftAlign,24); r++;
-    merge(ws,r,2,4,'2. _____________',bodyFont,leftAlign,24); merge(ws,r,5,7,'2. _____________',bodyFont,leftAlign,24); r+=2;
-    merge(ws,r,2,7,'Name of Person Receiving: ________________________',bodyFont,leftAlign,24); r++;
-    merge(ws,r,2,7,'Signature of Person Receiving: _____________________',bodyFont,leftAlign,24); r++;
-    merge(ws,r,2,7,'Date: ________________',bodyFont,leftAlign,24);
-    ws.printArea=`B1:G${r}`;
+    g.blocks.forEach((b,bi)=>{
+      if(bi){ ws.getRow(r-1).addPageBreak(); }
+      merge(ws,r,2,7,state.uniName||'DHA SUFFA UNIVERSITY',titleFont,center,27); r++;
+      merge(ws,r,2,7,reportExamTitle(),examFont,center,22); r++;
+      merge(ws,r,2,7,excelDepartmentHeaderLabel(),{name:'Times New Roman',size:13,bold:true},center,20); r++;
+      merge(ws,r,2,7,`ATTENDANCE SHEET ROOM # ${b.roomName||'--'}`,sectionFont,center,25); r++;
+      merge(ws,r,2,7,b.classLabel||'',sectionFont,center,25); r++;
+      ws.mergeCells(r,2,r,4); ws.getCell(r,2).value='Course Title:'; ws.getCell(r,2).font=labelFont; ws.getCell(r,2).alignment=leftAlign;
+      ws.mergeCells(r,5,r,6); ws.getCell(r,5).value=b.courseTitle||''; ws.getCell(r,5).font=labelFont; ws.getCell(r,5).alignment=leftAlign;
+      ws.getCell(r,7).value=`Session: ${b.sessionText||''}`; ws.getCell(r,7).font=labelFont; ws.getCell(r,7).alignment=leftAlign; ws.getRow(r).height=30; r++;
+      ws.mergeCells(r,2,r,4); ws.getCell(r,2).value='Subject Teacher:'; ws.getCell(r,2).font=labelFont; ws.getCell(r,2).alignment=leftAlign;
+      ws.mergeCells(r,5,r,6); ws.getCell(r,5).value=b.faculty||''; ws.getCell(r,5).font=labelFont; ws.getCell(r,5).alignment=leftAlign;
+      ws.getCell(r,7).value=`Time: ${b.timeText||''}`; ws.getCell(r,7).font=labelFont; ws.getCell(r,7).alignment=leftAlign; ws.getRow(r).height=30; r++;
+      ws.mergeCells(r,2,r,4); ws.getCell(r,2).value=`Room No: ${b.roomName||'--'}`; ws.getCell(r,2).font=labelFont; ws.getCell(r,2).alignment=leftAlign;
+      ws.getCell(r,6).value='Date:'; ws.getCell(r,6).font=labelFont; ws.getCell(r,6).alignment=leftAlign; ws.getCell(r,7).value=reportDMY(b.dateText); ws.getCell(r,7).font=labelFont; ws.getCell(r,7).alignment=leftAlign; ws.getRow(r).height=24; r++;
+      ['S.No.','Reg No.','Name','Seating Plan','Copy No.','Signature / Remarks'].forEach((v,c)=>{const cell=ws.getCell(r,c+2);cell.value=v;cell.font=headFont;cell.alignment=center;cell.border=border;}); ws.getRow(r).height=26; r++;
+      b.rows.forEach(row=>{[row.sno,row.reg,row.name,row.seat,'',''].forEach((v,c)=>{const cell=ws.getCell(r,c+2);cell.value=v;cell.font=bodyFont;cell.alignment=c===2?leftAlign:center;cell.border=border;});ws.getRow(r).height=24;r++;});
+      r++;
+      ['Class','Total Student','No.of Subj.Scripts','','No.of Obj.Scripts','Total'].forEach((v,c)=>{const cell=ws.getCell(r,c+2);cell.value=v;cell.font=headFont;cell.alignment=center;cell.border=border;}); r++;
+      [b.classLabel||'',b.rows.length,'','','',''].forEach((v,c)=>{const cell=ws.getCell(r,c+2);cell.value=v;cell.font=bodyFont;cell.alignment=center;cell.border=border;}); r+=2;
+      ws.mergeCells(r,2,r,4); ws.getCell(r,2).value='Name of Invigilator(s):'; ws.getCell(r,2).font=labelFont; ws.getCell(r,2).alignment=leftAlign;
+      ws.mergeCells(r,5,r,7); ws.getCell(r,5).value='Signature of Invigilator(s)'; ws.getCell(r,5).font=labelFont; ws.getCell(r,5).alignment=leftAlign; r++;
+      merge(ws,r,2,4,'1. _____________',bodyFont,leftAlign,24); merge(ws,r,5,7,'1. _____________',bodyFont,leftAlign,24); r++;
+      merge(ws,r,2,4,'2. _____________',bodyFont,leftAlign,24); merge(ws,r,5,7,'2. _____________',bodyFont,leftAlign,24); r+=2;
+      merge(ws,r,2,7,'Name of Person Receiving: ________________________',bodyFont,leftAlign,24); r++;
+      merge(ws,r,2,7,'Signature of Person Receiving: _____________________',bodyFont,leftAlign,24); r++;
+      merge(ws,r,2,7,'Date: ________________',bodyFont,leftAlign,24); r++;
+      [isno++,reportDMY(b.dateText),b.sessionText||'',b.roomName||'--',b.classLabel||'',b.courseTitle||'',b.rows.length,sheetName].forEach((v,c)=>{const cell=idx.getCell(ir,c+1);cell.value=v;cell.font=bodyFont;cell.alignment=c===5?leftAlign:center;cell.border=border;});
+      idx.getCell(ir,8).value={text:sheetName,hyperlink:`#'${sheetName.replace(/'/g,"''")}'!A1`}; idx.getCell(ir,8).font={name:'Times New Roman',size:11,color:{argb:'FF1D4ED8'},underline:true};
+      ir++;
+    });
+    ws.pageSetup.printArea=`B1:G${r-1}`;
   });
+  reportExcelFooter(idx,'','Attendance Sheets Index');
+  idx.headerFooter={oddFooter:'&L&"Times New Roman,Regular"&9Attendance Sheets Index&R&"Times New Roman,Bold"&9Page &P of &N'};
+  idx.pageSetup.printTitlesRow='2:2';
+
   const buf=await wb.xlsx.writeBuffer();
   const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='attendance-sheets-DSU.xlsx'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
-  toast(`Downloaded DSU Attendance Sheet Excel — ${blocks.length} sheet(s)`,'ok');
+  toast(`Downloaded DSU Attendance Sheet Excel — ${groups.length} date sheet(s), ${blocks.length} room sheet(s), page numbers in footer`,'ok');
 }
 
 
@@ -7886,6 +8016,50 @@ function invigDateShort(d){
   const mon=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+m[2]-1];
   return `${+m[3]}-${mon}-${m[1].slice(2)}`;
 }
+/* Keep the page where it is while editing the Invigilation Roster.
+   Every edit rebuilds the roster HTML, which used to reset the scrollable
+   roster table (and sometimes the page) to the top. This wrapper remembers
+   the page scroll, the scroll of every scrollable box inside the roster and
+   the field that had focus, then puts them all back after the re-render. */
+function invigCaptureView(box){
+  const all=box?[...box.querySelectorAll('*')]:[];
+  const scrollers=all.filter(el=>el.scrollTop||el.scrollLeft).map(el=>({key:invigElKey(el,box),top:el.scrollTop,left:el.scrollLeft}));
+  const ae=document.activeElement;
+  let focus=null;
+  if(box && ae && box.contains(ae) && ae!==box){
+    const fields=[...box.querySelectorAll('input,select,textarea,button')];
+    focus={idx:fields.indexOf(ae),key:invigElKey(ae,box),selStart:ae.selectionStart,selEnd:ae.selectionEnd};
+  }
+  return {x:window.scrollX,y:window.scrollY,docTop:document.documentElement.scrollTop,bodyTop:document.body.scrollTop,scrollers,focus};
+}
+function invigElKey(el,root){
+  const path=[]; let n=el;
+  while(n && n!==root){ const p=n.parentElement; if(!p) break; path.unshift(n.tagName+':'+[...p.children].indexOf(n)); n=p; }
+  return path.join('/');
+}
+function invigFindByKey(root,key){
+  if(!key) return null; let n=root;
+  for(const part of key.split('/')){ const [tag,idx]=part.split(':'); const c=n&&n.children[+idx]; if(!c||c.tagName!==tag) return null; n=c; }
+  return n;
+}
+function invigRestoreView(box,v){
+  if(!box||!v) return;
+  const apply=()=>{
+    v.scrollers.forEach(s=>{ const el=invigFindByKey(box,s.key); if(el){ el.scrollTop=s.top; el.scrollLeft=s.left; } });
+    window.scrollTo(v.x,v.y);
+    if(document.documentElement.scrollTop!==v.docTop) document.documentElement.scrollTop=v.docTop;
+    if(document.body.scrollTop!==v.bodyTop) document.body.scrollTop=v.bodyTop;
+  };
+  apply();
+  if(v.focus){
+    const fields=[...box.querySelectorAll('input,select,textarea,button')];
+    const el=invigFindByKey(box,v.focus.key)||fields[v.focus.idx];
+    if(el && typeof el.focus==='function'){
+      try{ el.focus({preventScroll:true}); if(v.focus.selStart!=null && el.setSelectionRange) el.setSelectionRange(v.focus.selStart,v.focus.selEnd); }catch(e){}
+    }
+  }
+  requestAnimationFrame(apply);
+}
 function renderInvigilation(){
   const box=document.getElementById('invigView'); if(!box) return;
   const v=invigState();
@@ -7971,6 +8145,14 @@ function renderInvigilation(){
     </div>
   </div>`;
 }
+const _renderInvigilationRaw=renderInvigilation;
+renderInvigilation=function(){
+  const box=document.getElementById('invigView');
+  const view=invigCaptureView(box);
+  const out=_renderInvigilationRaw.apply(this,arguments);
+  invigRestoreView(box,view);
+  return out;
+};
 
 
 /* ---- Department short codes (roster shows ME / EE / CS / MS … not full names) ---- */
