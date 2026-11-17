@@ -284,6 +284,18 @@ tr:hover{background:#f8fafc}
 .dup-row{font-size:11px;padding:3px 6px;margin-top:3px;border-radius:6px;background:#fff;border:1px solid #fde68a;display:flex;flex-wrap:wrap;gap:4px;align-items:center}
 .dup-row.is-placed{border-color:#86efac;background:#f0fdf4}
 .dup-skip{font-size:10px;background:#fee2e2;color:#991b1b;border-radius:8px;padding:1px 6px}
+.pr-teacher{margin-bottom:14px;border:1px solid #ddd6fe;border-radius:8px;overflow:hidden}
+.pr-head{background:#f5f3ff;padding:7px 10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;border-bottom:1px solid #ddd6fe}
+.pr-teacher table{width:100%}
+.park-hint{position:relative;display:inline-block;margin-left:auto;cursor:help;font-size:14px;line-height:1;padding:0 2px;flex:none}
+.park-hint-pop{display:none;position:fixed;left:0;top:0;z-index:200;width:300px;max-height:60vh;overflow:auto;background:#fff;color:#1e293b;border:1.5px solid #7c3aed;border-radius:8px;box-shadow:0 8px 24px rgba(15,23,42,.18);padding:8px 10px;font-weight:400;font-size:11.5px;cursor:default}
+#parkHintFloat{position:fixed}
+.ph-title{font-weight:700;color:#5b21b6;margin-bottom:4px}
+.ph-sub{color:#64748b;margin:4px 0 2px}
+.ph-warn{color:#b45309;font-weight:600;margin-top:4px}
+.ph-ok{background:#dcfce7;color:#166534;border-radius:8px;padding:0 5px;font-size:10px}
+.ph-row{display:flex;justify-content:space-between;align-items:center;gap:6px;padding:3px 0;border-top:1px dashed #e9d5ff}
+.ph-row button{font-size:10.5px;padding:2px 7px;border-radius:6px;border:1px solid #7c3aed;background:#7c3aed;color:#fff;cursor:pointer;flex:none}
 </style>
 </head>
 <body>
@@ -311,6 +323,7 @@ tr:hover{background:#f8fafc}
   <button class="tab" data-tab="seating">🪑 Auto Seating</button>
   <button class="tab" data-tab="conflicts">⚠️ Conflicts</button>
   <button class="tab" data-tab="courseclashes">📚 Course-wise Clashes</button>
+  <button class="tab" data-tab="paperreq">📝 Teacher Paper Requirement</button>
   <button class="tab" data-tab="examload">📅 Exams per Day <span id="examLoadBadge" class="badge red" style="margin-left:3px"></span></button>
   <button class="tab" data-tab="occupancy">📈 Session Occupancy</button>
   <button class="tab" data-tab="stuoccupancy">🧑‍🎓 Student Occupancy</button>
@@ -495,6 +508,10 @@ tr:hover{background:#f8fafc}
         <div class="desc" style="margin-top:2px">Seating never puts two courses with the same name in neighbouring columns, whichever option is chosen.</div>
       </div>
       <label style="display:flex;gap:6px;align-items:center;font-weight:normal">
+        <input type="checkbox" id="chkTeacherCourse" onchange="state.groupSameTeacherCourse=this.checked;invalidatePaperCache();save();toast('Re-run ⚡ Auto Schedule to apply','ok')">
+        <b>Same teacher, same course → same day &amp; time</b> — when one teacher teaches the same course (same course name) in several sections or departments, all of them are scheduled together so the teacher sets <b>one</b> paper. If that causes a student clash, the paper still stays together and the clashing students are listed below and in Auto Seating → Clash Students.
+      </label>
+      <label style="display:flex;gap:6px;align-items:center;font-weight:normal">
         <input type="checkbox" id="chkTeacherDays" onchange="state.groupTeacherDays=this.checked;save()">
         <b>Teacher grouping</b> — prefer scheduling a teacher's other courses on a day they already have an exam, to reduce the number of separate exam days for that teacher
       </label>
@@ -612,6 +629,27 @@ tr:hover{background:#f8fafc}
 </section>
 
 <!-- COURSE-WISE CLASHES -->
+<!-- TEACHER PAPER REQUIREMENT -->
+<section class="panel" id="p-paperreq">
+  <div class="card" style="border:1.5px solid #7c3aed;background:#faf5ff">
+    <div class="row" style="justify-content:space-between;align-items:flex-end;gap:10px;flex-wrap:wrap">
+      <div><h3>📝 Teacher Paper Requirement</h3>
+        <div class="desc">How many question papers each teacher has to prepare: one row per paper (same subject in one session = one paper, all its classes listed), with exam <b>date, day, session/time, course code, subject name, classes, students</b> and the <b>copies to print</b>. Student numbers come from the seating plan (or the enrolment if seating is not generated yet). Follows the 📅 Report dates selection in Reports.</div></div>
+      <div class="row" style="gap:8px;align-items:flex-end;flex-wrap:wrap">
+        <label style="font-size:11px;font-weight:600;color:var(--mut)">Department<br><select id="prDept" onchange="setPaperReqFilter('dept',this.value)" style="min-width:170px"><option value="">All departments</option></select></label>
+        <label style="font-size:11px;font-weight:600;color:var(--mut)">Program<br><select id="prProg" onchange="setPaperReqFilter('program',this.value)" style="min-width:190px"><option value="">All programs</option></select></label>
+        <label style="font-size:11px;font-weight:600;color:var(--mut)">Teacher<br><select id="prTeacher" onchange="renderPaperRequirement()" style="min-width:200px"><option value="">All teachers</option></select></label>
+        <label style="font-size:11px;font-weight:600;color:var(--mut)">Date<br><select id="prDate" onchange="renderPaperRequirement()"><option value="">All dates</option></select></label>
+        <label style="font-size:11px;font-weight:600;color:var(--mut)" title="Extra copies per paper, e.g. 5% spare">Spare copies %<br><input id="prSpare" type="number" min="0" max="50" style="width:70px" onchange="state.paperSparePct=Math.max(0,Math.min(50,+this.value||0));save();renderPaperRequirement()"></label>
+        <label style="font-size:11px;font-weight:600;color:var(--mut)">Search<br><input id="prSearch" placeholder="Teacher / subject / code" oninput="renderPaperRequirement()" style="width:170px"></label>
+        <button class="btn" onclick="xlsxPaperRequirement()">⬇ Excel</button>
+        <button class="btn ghost" onclick="pdfPaperRequirement()">⬇ PDF</button>
+      </div>
+    </div>
+  </div>
+  <div id="paperReqView"></div>
+</section>
+
 <!-- EXAMS PER DAY (heavy days) -->
 <section class="panel" id="p-examload">
   <div class="card" style="border:1.5px solid #dc2626;background:#fef2f2">
@@ -845,6 +883,7 @@ tr:hover{background:#f8fafc}
     <div class="card"><h3>Student Individual Timetables</h3><div class="desc">One row/page per student showing their name, roll no, all scheduled exams with date, time, room and seat number.</div><div class="row"><button class="btn" onclick="xlsxStudentPapers()">⬇ Excel</button><button class="btn ghost" onclick="pdfStudentPapers()">⬇ PDF (table)</button><button class="btn ghost" onclick="pdfStudentAdmitCards()">⬇ PDF (Admit Card — 1 page/student)</button></div></div>
     <div class="card"><h3>Daily Class Schedule</h3><div class="desc">Per-day exam schedule with assigned rooms.</div><div class="row"><button class="btn" onclick="xlsxDaily()">⬇ Excel</button><button class="btn ghost" onclick="pdfDaily()">⬇ PDF</button></div></div>
     <div class="card"><h3>Seating Plan (room grid)</h3><div class="desc">Room-by-room seat layout for each session, laid out as a row/column grid. Each seat shows roll no, name and course code + course name. Choose <b>📑 Excel sheets → Day-wise</b> above (or in Auto Seating) for one worksheet per date.</div><div class="row"><button class="btn" onclick="xlsxSeatingGrid()">⬇ Excel</button><button class="btn ghost" onclick="pdfSeating()">⬇ PDF</button></div></div>
+    <div class="card" style="border:1.5px solid #7c3aed"><h3>📝 Teacher Paper Requirement</h3><div class="desc">How many papers each teacher must prepare, with date, day, session, subject name, classes, students and copies to print. Uses the 📅 Report dates above. Open the <b>📝 Teacher Paper Requirement</b> tab to view and filter on screen.</div><div class="row"><button class="btn" onclick="xlsxPaperRequirement()">⬇ Excel</button><button class="btn ghost" onclick="pdfPaperRequirement()">⬇ PDF</button><button class="btn ghost" onclick="document.querySelector('.tab[data-tab=&quot;paperreq&quot;]').click()">👁 Open tab</button></div></div>
     <div class="card"><h3>Faculty Courses</h3><div class="desc">One page per faculty member: every course they teach with exam date, day, session, time and the room(s) where it is held (from the current seating plan).</div><div class="row"><button class="btn" onclick="xlsxFaculty()">⬇ Excel</button><button class="btn ghost" onclick="pdfFaculty()">⬇ PDF</button></div></div>
   </div>
 </section>
@@ -961,7 +1000,8 @@ let state = {
   timetableProgramGroups: [], // [{id,name,department,programs:[]}] custom report groups
   schedulingGroups: [], // manual course groups: {id, name, courseIds:[]} -- forced into the same session
   mergeSectionsByCode: true,
-  courseGroupingMode: 'department', // 'department' | 'all' | 'off' -- see courseGroupingMode()   // auto: courses sharing the same course code, or the same course name (different sections), always land in the same session
+  courseGroupingMode: 'department', // 'department' | 'all' | 'off' -- see courseGroupingMode()
+  groupSameTeacherCourse: true,     // same teacher + same course name -> same day & time (one paper)   // auto: courses sharing the same course code, or the same course name (different sections), always land in the same session
   groupTeacherDays: true,      // soft: prefer putting all of one teacher's exams on the same day (different sessions ok)
   sessionMode: 3,
   maxExamsPerDay: 2,
@@ -1648,11 +1688,33 @@ function paperRootMap(courseList){
     return r;
   };
   const union = (a, b) => { const ra = find(a), rb = find(b); if(ra !== rb) parent.set(ra, rb); };
-  const byCode = new Map(), byTitle = new Map();
+  // SUBJECT = COURSE NAME. Two rows are the same subject when their course
+  // NAMES match (case, spacing, dashes, "&"/"and" and "(Section A)" ignored).
+  // Course codes are NOT trusted on their own: real data reuses one code for
+  // different subjects (e.g. CS-3301 "Artificial Intelligence" and CS-3301
+  // "Machine Learning"). A shared code only joins two rows whose names are
+  // nearly identical (a small spelling difference), and a row without a name
+  // falls back to its code.
+  const lev=(a,b)=>{ if(Math.abs(a.length-b.length)>2) return 9; const d=[...Array(b.length+1).keys()]; for(let i=1;i<=a.length;i++){ let prev=d[0]; d[0]=i; for(let j=1;j<=b.length;j++){ const t=d[j]; d[j]=Math.min(d[j]+1,d[j-1]+1,prev+(a[i-1]===b[j-1]?0:1)); prev=t; } } return d[b.length]; };
+  const nearlySame=(a,b)=>a===b || (a.length>=6 && b.length>=6 && lev(a,b)<=2);
+  const byTitle = new Map(), byCodeNoTitle = new Map(), byCode = new Map();
   courseList.forEach(c => {
     const ck = normCodeKey(c.code), tk = normTitleKey(c.title);
-    if(ck){ if(byCode.has(ck)) union(c.id, byCode.get(ck)); else byCode.set(ck, c.id); }
-    if(tk.length >= 4){ if(byTitle.has(tk)) union(c.id, byTitle.get(tk)); else byTitle.set(tk, c.id); }
+    if(tk.length >= 4){
+      if(byTitle.has(tk)) union(c.id, byTitle.get(tk)); else byTitle.set(tk, c.id);
+    } else if(ck){
+      if(byCodeNoTitle.has(ck)) union(c.id, byCodeNoTitle.get(ck)); else byCodeNoTitle.set(ck, c.id);
+    }
+    if(ck){ if(!byCode.has(ck)) byCode.set(ck, []); byCode.get(ck).push({id:c.id, tk}); }
+  });
+  // same code + nearly identical name (typo) -> same subject; same code with
+  // an empty name -> joins the named row of that code
+  byCode.forEach(list=>{
+    for(let i=0;i<list.length;i++) for(let j=i+1;j<list.length;j++){
+      const a=list[i], b=list[j];
+      if((a.tk.length<4) !== (b.tk.length<4)) { union(a.id,b.id); continue; }
+      if(a.tk.length>=4 && nearlySame(a.tk,b.tk)) union(a.id,b.id);
+    }
   });
   return { find, union, has: id => parent.has(id) };
 }
@@ -1746,6 +1808,21 @@ function buildSchedulingUnits(courseList, enrollMap){
       if(first.has(r)) union(c.id, first.get(r)); else first.set(r, c.id);
     });
   }
+  // SAME TEACHER + SAME COURSE (same course name) -> one paper, one session,
+  // even across departments / sections. Teachers are matched by name (a
+  // course with several teachers joins each of them).
+  const teacherMerged = new Set();
+  if(state.groupSameTeacherCourse !== false){
+    const first = new Map();
+    courseList.forEach(c => {
+      const names = String(c.faculty||'').trim() ? splitTeachers(c.faculty) : [];
+      names.forEach(t => {
+        const key = t.toLowerCase().replace(/[^a-z0-9]/g,'') + '|' + paperRootOf(c.id);
+        if(first.has(key)){ if(find(first.get(key)) !== find(c.id)){ union(c.id, first.get(key)); teacherMerged.add(c.id); teacherMerged.add(first.get(key)); } }
+        else first.set(key, c.id);
+      });
+    });
+  }
   (state.schedulingGroups || []).forEach(g => {
     const ids = (g.courseIds || []).filter(id => parent.has(id));
     for(let i=1; i<ids.length; i++) union(ids[0], ids[i]);
@@ -1769,6 +1846,7 @@ function buildSchedulingUnits(courseList, enrollMap){
     const faculties = [...new Set(courses.map(c => c.faculty).filter(Boolean))];
     return {
       id: courses.map(c => c.id).join('+'),
+      teacherMerged: courses.some(c => teacherMerged.has(c.id)),
       courses, studentIds, faculties,
       seatCost: studentIds.size + noRosterCost,
       grouped: courses.length > 1
@@ -1974,7 +2052,30 @@ function runSchedule(){
       if(ch.length) place(unit, ch[0]);
     });
   }
+  // A same-teacher paper must stay ONE paper (same day, same time) even when
+  // no clash-free slot exists: it goes to the slot with the FEWEST student
+  // clashes (room capacity and the teacher's other exams still respected),
+  // and the clashing students are listed on screen.
+  const forced = [];
+  {
+    const done = placedCourseIds();
+    units.filter(u => u.teacherMerged && !u.courses.some(c => done.has(c.id))).forEach(unit => {
+      let best=null;
+      state.sessions.forEach(s=>{
+        const sd=sessionData.get(s.id);
+        if(sd.used + unit.seatCost > sd.cap) return;
+        if(unit.faculties.some(f=>sd.faculty.has(f))) return;
+        const ovl=[s.id,...(overlapMap.get(s.id)||[])];
+        let clashes=0; unit.studentIds.forEach(sid=>{ if(ovl.some(id=>sessionData.get(id)?.students.has(sid))) clashes++; });
+        const sc=clashes*100000+sd.used;
+        if(!best || sc<best.sc) best={id:s.id, sc, clashes};
+      });
+      if(best){ place(unit, best.id); forced.push({courseIds:unit.courses.map(c=>c.id), sessionId:best.id, clashes:best.clashes}); }
+    });
+  }
+  state.forcedTeacherPapers = forced;
   state.scheduled = assignments;
+  try{ combineTeacherPapers(true); }catch(e){ console.error(e); }
   // Courses may have moved session: drop park entries left behind in old sessions.
   try{ reconcileParkedWithSeating(); }catch(e){}
   save(); safeRender();
@@ -1992,6 +2093,7 @@ function runSchedule(){
   toast(
     'Scheduled ' + assignments.length + ' exams across ' + state.sessions.length + ' sessions' + groupNote +
     (unplaced ? ' ('+unplaced+' could not fit -- add more sessions)' : '') +
+    (forced.length ? ` ⚠ ${forced.length} same-teacher paper(s) kept on one day/time with ${forced.reduce((n,f)=>n+f.clashes,0)} student clash(es) -- see the list on this tab and Auto Seating → Clash Students` : '') +
     (unplacedMerged.length ? ` — merged paper(s) kept whole but not placed: ${unplacedMerged.slice(0,3).map(u=>u.courses[0].code).join(', ')}${unplacedMerged.length>3?' +'+(unplacedMerged.length-3)+' more':''}` : ''),
     unplaced ? 'warn' : 'ok'
   );
@@ -2589,7 +2691,9 @@ function runSeating(onlyGrouped){
     (noLabRoomCount ? ` ⚠ ${noLabRoomCount} Lab course(s) seated in regular rooms -- no Lab room is configured (check the Lab box in Rooms)` : '') +
     (fill.placed ? ` · ${fill.placed} extra seated to use full room capacity` : '') +
     (fill.overflow ? ` ⚠ ${fill.overflow} could not get a seat without sitting next to the same subject -- parked (see "Where can I place them?")` : '') +
-    (held.size ? ` ⛔ ${held.size} same-time paper${held.size===1?'':'s'} not seated (student already has an exam then) -- see Clash Students` : '') +
+    (()=>{ const nd=(state.heldDuplicateEntries||[]).length, nc=held.size-nd;
+      return (nc>0 ? ` ⛔ ${nc} same-time paper${nc===1?'':'s'} not seated (student already has an exam then) -- see Clash Students` : '')
+           + (nd>0 ? ` · 🔁 ${nd} duplicate section${nd===1?'':'s'} skipped (same course in 2 sections -- see Duplicate courses)` : ''); })() +
     (parkedCount ? ` · ${parkedCount} parked for manual placement` : '') +
     (unplaced>0 ? ` ⚠ ${unplaced} could not fit — add more rooms` : (fill.overflow ? '' : ' ✓')),
     (unplaced>0 || fill.overflow) ? 'warn' : 'ok'
@@ -2877,6 +2981,7 @@ function autoFixAllDailyOverloads(){
     if(!candidates.length) break;
     let progressed = false;
     for(const courseId of candidates){
+      if(teacherGroupIds(courseId).length>1) continue; // part of a same-teacher paper -- never split it
       const cur = state.scheduled.find(sc=>sc.courseId===courseId); if(!cur) continue;
       const curSess = state.sessions.find(s=>s.id===cur.sessionId); if(!curSess) continue;
       const stu = enroll.get(courseId) || new Set();
@@ -3039,6 +3144,7 @@ function autoResolveStudentClashes(){
 
     let resolved = false;
     for(const courseId of candidates){
+      if(teacherGroupIds(courseId).length>1) continue; // part of a same-teacher paper -- never split it
       const cur = state.scheduled.find(sc=>sc.courseId===courseId); if(!cur) continue;
       const curSess = state.sessions.find(s=>s.id===cur.sessionId); if(!curSess) continue;
       const stu = enroll.get(courseId) || new Set();
@@ -3112,6 +3218,158 @@ function applyAllGroupsAndReseat(){
   else { runSeating(); state.groupsSeatingStale=false; renderManualGroups(); }
 }
 
+/* ================= TEACHER PAPER REQUIREMENT =================
+   One row per PAPER a teacher must prepare: same subject (same course name)
+   in the same session = one paper, whatever the number of sections/classes.
+   Students = seated students (seating plan) or enrolled students if the
+   session has no seating yet. Copies = students + spare %. */
+function splitTeachers(f){
+  const t=String(f||'').split(/\s*(?:,|;|\/|&|\band\b)\s*/i).map(x=>x.trim()).filter(Boolean);
+  return t.length?t:['(No teacher assigned)'];
+}
+// Department of a course: the custom Program Group it belongs to (Timetable —
+// Program-wise), else the program's short department code (CS, SE, AI ...).
+function courseDepartmentName(c){
+  const g=(state.timetableProgramGroups||[]).find(g=>(g.programs||[]).includes(c.program));
+  if(g) return g.department||g.name||'Department';
+  return deptShortCode(c.program)||c.program||'(No department)';
+}
+function paperReqFilter(){ if(!state.paperReqFilter||typeof state.paperReqFilter!=='object') state.paperReqFilter={dept:'',program:''}; return state.paperReqFilter; }
+function setPaperReqFilter(k,v){ paperReqFilter()[k]=v; if(k==='dept') paperReqFilter().program=''; save(); renderPaperRequirement(); }
+function paperRequirementData(){
+  const spare=Math.max(0,+state.paperSparePct||0);
+  const F=paperReqFilter();
+  const seats=reportSeating();
+  const {romanMap}=sessionOrderMaps();
+  const papers=new Map(); // teacher|session|subject -> paper
+  state.sessions.forEach(sess=>{
+    if(!reportDateAllowed(sess.date)) return;
+    const seatedHere=seats.filter(x=>x.sessionId===sess.id);
+    const hasSeating=seatedHere.length>0;
+    sessionCourseIdsFor(sess.id).forEach(cid=>{
+      const c=state.courses.find(x=>x.id===cid); if(!c) return;
+      if(F.dept && courseDepartmentName(c)!==F.dept) return;      // department filter
+      if(F.program && c.program!==F.program) return;               // program filter
+      const mine=seatedHere.filter(x=>x.courseId===cid);
+      const students=hasSeating ? mine.length : studentsOfInSession(cid,sess.id).length || (c.studentCount||0);
+      const rooms=[...new Set(mine.map(x=>state.rooms.find(r=>r.id===x.roomId)?.name).filter(Boolean))];
+      splitTeachers(c.faculty).forEach(t=>{
+        const key=t.toLowerCase()+'|'+sess.id+'|'+paperRootOf(cid);
+        if(!papers.has(key)) papers.set(key,{teacher:t, sess, roman:romanMap[sess.id]||romanNum(sessionPeriodIndex(sess)), codes:new Set(), title:c.title||c.code, classes:[], students:0, rooms:new Set(), programs:new Set(), depts:new Set()});
+        const p=papers.get(key);
+        p.codes.add(c.code); p.programs.add(c.program||''); p.depts.add(courseDepartmentName(c)); p.classes.push(c.section||c.program||''); p.students+=students; rooms.forEach(r=>p.rooms.add(r));
+      });
+    });
+  });
+  const byTeacher=new Map();
+  [...papers.values()].forEach(p=>{
+    p.copies=Math.ceil(p.students*(1+spare/100));
+    if(!byTeacher.has(p.teacher)) byTeacher.set(p.teacher,[]);
+    byTeacher.get(p.teacher).push(p);
+  });
+  return [...byTeacher.entries()].map(([teacher,list])=>{
+    list.sort((a,b)=>(a.sess.date||'').localeCompare(b.sess.date||'')||(a.sess.startTime||'').localeCompare(b.sess.startTime||'')||String(a.title).localeCompare(String(b.title)));
+    return {teacher, list, papers:list.length, students:list.reduce((n,p)=>n+p.students,0), copies:list.reduce((n,p)=>n+p.copies,0),
+      dates:[...new Set(list.map(p=>p.sess.date))]};
+  }).sort((a,b)=>a.teacher.localeCompare(b.teacher));
+}
+function paperRowCells(p){
+  return [reportDMY(p.sess.date), p.sess.day||dayName(p.sess.date), `Session ${p.roman} (${periodName(p.sess)})`, `${p.sess.startTime}-${p.sess.endTime}`,
+    [...p.codes].join(', '), p.title, p.classes.filter(Boolean).join(', '), p.students, p.copies, [...p.rooms].join(', ')];
+}
+function renderPaperRequirement(){
+  const view=document.getElementById('paperReqView'); if(!view) return;
+  const sp=document.getElementById('prSpare'); if(sp && document.activeElement!==sp) sp.value=+state.paperSparePct||0;
+  const F=paperReqFilter();
+  const deptSel=document.getElementById('prDept'), progSel=document.getElementById('prProg');
+  const schedCourses=[...new Set(state.scheduled.map(sc=>sc.courseId))].map(id=>state.courses.find(c=>c.id===id)).filter(Boolean);
+  const depts=[...new Set(schedCourses.map(courseDepartmentName))].sort();
+  const progs=[...new Set(schedCourses.filter(c=>!F.dept||courseDepartmentName(c)===F.dept).map(c=>c.program).filter(Boolean))].sort();
+  if(F.dept && !depts.includes(F.dept)) F.dept='';
+  if(F.program && !progs.includes(F.program)) F.program='';
+  if(deptSel) deptSel.innerHTML='<option value="">All departments</option>'+depts.map(d=>`<option value="${esc(d)}" ${d===F.dept?'selected':''}>${esc(d)}</option>`).join('');
+  if(progSel) progSel.innerHTML='<option value="">All programs</option>'+progs.map(p=>`<option value="${esc(p)}" ${p===F.program?'selected':''}>${esc(p)}</option>`).join('');
+  const data=paperRequirementData();
+  const tSel=document.getElementById('prTeacher'), dSel=document.getElementById('prDate');
+  const keepT=tSel?tSel.value:'', keepD=dSel?dSel.value:'';
+  if(tSel) tSel.innerHTML='<option value="">All teachers</option>'+data.map(d=>`<option value="${esc(d.teacher)}" ${d.teacher===keepT?'selected':''}>${esc(d.teacher)} (${d.papers})</option>`).join('');
+  const allDates=[...new Set(data.flatMap(d=>d.dates))].sort();
+  if(dSel) dSel.innerHTML='<option value="">All dates</option>'+allDates.map(d=>`<option value="${esc(d)}" ${d===keepD?'selected':''}>${esc(dayName(d))} ${esc(reportDMY(d))}</option>`).join('');
+  const q=(document.getElementById('prSearch')?.value||'').trim().toLowerCase();
+  const shown=data.filter(d=>!keepT||d.teacher===keepT).map(d=>({...d, list:d.list.filter(p=>(!keepD||p.sess.date===keepD) && (!q || d.teacher.toLowerCase().includes(q) || String(p.title).toLowerCase().includes(q) || [...p.codes].join(' ').toLowerCase().includes(q)))})).filter(d=>d.list.length);
+  if(!data.length){ view.innerHTML=`<div class="card"><div class="empty-state">${(F.dept||F.program)?'No papers for the selected department / program.':`No scheduled exams${(state.reportDates||[]).length?' on the selected report dates':''} -- run ⚡ Auto Schedule first.`}</div></div>`; return; }
+  const totPapers=shown.reduce((n,d)=>n+d.list.length,0), totCopies=shown.reduce((n,d)=>n+d.list.reduce((m,p)=>m+p.copies,0),0);
+  view.innerHTML=`<div class="card">
+    <div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:10px">
+      ${F.dept?`<span class="badge" style="background:#7c3aed;color:#fff">Department: ${esc(F.dept)}</span>`:''}${F.program?`<span class="badge" style="background:#7c3aed;color:#fff">Program: ${esc(F.program)}</span>`:''}
+      <span class="badge" style="background:#ede9fe;color:#5b21b6">${shown.length} teacher(s)</span>
+      <span class="badge" style="background:#ede9fe;color:#5b21b6">${totPapers} paper(s) to prepare</span>
+      <span class="badge" style="background:#ede9fe;color:#5b21b6">${totCopies} copies to print${+state.paperSparePct?` (incl. ${+state.paperSparePct}% spare)`:''}</span>
+    </div>
+    <div style="overflow:auto;max-height:72vh">
+    ${shown.map(d=>`<div class="pr-teacher">
+      <div class="pr-head"><b>👤 ${esc(d.teacher)}</b> <span class="badge" style="background:#7c3aed;color:#fff">${d.list.length} paper${d.list.length===1?'':'s'}</span> <span class="desc">${d.list.reduce((n,p)=>n+p.students,0)} students · ${d.list.reduce((n,p)=>n+p.copies,0)} copies · ${[...new Set(d.list.map(p=>p.sess.date))].length} exam day(s)</span></div>
+      <table><thead><tr><th>#</th><th>Date</th><th>Day</th><th>Session</th><th>Time</th><th>Code</th><th>Subject Name</th><th>Class(es)</th><th>Students</th><th>Copies</th><th>Room(s)</th></tr></thead><tbody>
+      ${d.list.map((p,i)=>{ const c=paperRowCells(p); return `<tr><td>${i+1}</td><td><b>${esc(c[0])}</b></td><td>${esc(c[1])}</td><td>${esc(c[2])}</td><td>${esc(c[3])}</td><td>${esc(c[4])}</td><td><b>${esc(c[5])}</b></td><td>${esc(c[6])}</td><td style="text-align:center">${c[7]}</td><td style="text-align:center"><b>${c[8]}</b></td><td>${esc(c[9])||'<span class="desc">not seated yet</span>'}</td></tr>`; }).join('')}
+      </tbody></table></div>`).join('') || '<div class="empty-state">No paper matches the filters.</div>'}
+    </div></div>`;
+}
+function xlsxPaperRequirement(){
+  const data=paperRequirementData();
+  if(!data.length){ toast('No scheduled exams for the selected report dates','warn'); return; }
+  const spare=+state.paperSparePct||0;
+  const summary=data.map((d,i)=>({'S.No':i+1,'Teacher':d.teacher,'Papers to prepare':d.papers,'Students':d.students,[`Copies to print${spare?` (+${spare}% spare)`:''}`]:d.copies,'Exam dates':d.dates.map(reportDMY).join(', '),
+    'Subjects':[...new Set(d.list.map(p=>p.title))].join(', ')}));
+  summary.push({'S.No':'','Teacher':'TOTAL','Papers to prepare':data.reduce((n,d)=>n+d.papers,0),'Students':data.reduce((n,d)=>n+d.students,0),[`Copies to print${spare?` (+${spare}% spare)`:''}`]:data.reduce((n,d)=>n+d.copies,0)});
+  const detail=[]; data.forEach(d=>d.list.forEach((p,i)=>{ const c=paperRowCells(p); detail.push({'Teacher':d.teacher,'#':i+1,'Date':c[0],'Day':c[1],'Session':c[2],'Time':c[3],'Course Code':c[4],'Subject Name':c[5],'Class(es)':c[6],'Program(s)':[...p.programs].filter(Boolean).join(', '),'Department(s)':[...p.depts].join(', '),'Students':c[7],'Copies':c[8],'Room(s)':c[9]}); }));
+  const sheets={'Summary by Teacher':summary,'All Papers':detail};
+  if(seatingExcelLayout()==='day'){ [...new Set(detail.map(r=>r.Date))].forEach(dt=>{ sheets[dt]=detail.filter(r=>r.Date===dt); }); }
+  const F=paperReqFilter();
+  const tag=[F.dept&&(deptShortCode(F.dept)||F.dept),F.program&&(deptShortCode(F.program)||F.program)].filter(Boolean).join('_').replace(/[^A-Za-z0-9_-]+/g,'-').slice(0,40);
+  xlsxDownload(sheets,`teacher-paper-requirement${tag?'_'+tag:''}.xlsx`);
+}
+function pdfPaperRequirement(){
+  const data=paperRequirementData();
+  if(!data.length){ toast('No scheduled exams for the selected report dates','warn'); return; }
+  const spare=+state.paperSparePct||0;
+  const doc=new jsPDF({unit:'pt',format:'a4',orientation:'landscape'});
+  const pw=doc.internal.pageSize.getWidth();
+  // Page 1: summary
+  const F=paperReqFilter();
+  const filt=[F.dept&&`Department: ${F.dept}`,F.program&&`Program: ${F.program}`].filter(Boolean).join(' · ');
+  let y=pdfReportHeader(doc,'TEACHER PAPER REQUIREMENT',`Papers each teacher must prepare${filt?' · '+filt:''}${spare?` · copies include ${spare}% spare`:''}`);
+  doc.autoTable({
+    head:[['S.No','Teacher','Papers to prepare','Students','Copies to print','Exam dates']],
+    body:[...data.map((d,i)=>[i+1,d.teacher,d.papers,d.students,d.copies,d.dates.map(reportDMY).join(', ')]),
+      [{content:'TOTAL',colSpan:2,styles:{fontStyle:'bold',halign:'right'}},data.reduce((n,d)=>n+d.papers,0),data.reduce((n,d)=>n+d.students,0),data.reduce((n,d)=>n+d.copies,0),'']],
+    startY:y+6, theme:'grid',
+    styles:{font:'helvetica',fontSize:9,cellPadding:3,textColor:[0,0,0],lineColor:[0,0,0],lineWidth:.4,valign:'middle'},
+    headStyles:{fillColor:[91,33,182],textColor:255,fontStyle:'bold',halign:'center'},
+    columnStyles:{0:{halign:'center',cellWidth:34},2:{halign:'center',cellWidth:80},3:{halign:'center',cellWidth:60},4:{halign:'center',cellWidth:80}},
+    margin:{left:40,right:40,bottom:40}
+  });
+  // Then one block per teacher (a new page when the block would not fit)
+  data.forEach(d=>{
+    doc.addPage();
+    let yy=pdfReportHeader(doc,'TEACHER PAPER REQUIREMENT',filt);
+    doc.setFont('helvetica','bold').setFontSize(13).setTextColor(0,0,0);
+    doc.text(`Teacher: ${d.teacher}`,40,yy+4);
+    doc.setFont('helvetica','normal').setFontSize(10);
+    doc.text(`Papers to prepare: ${d.papers}   ·   Students: ${d.students}   ·   Copies to print: ${d.copies}`,pw-40,yy+4,{align:'right'});
+    doc.autoTable({
+      head:[['#','Date','Day','Session','Time','Code','Subject Name','Class(es)','Students','Copies','Room(s)']],
+      body:d.list.map((p,i)=>[i+1,...paperRowCells(p)]),
+      startY:yy+14, theme:'grid',
+      styles:{font:'helvetica',fontSize:9,cellPadding:3.5,textColor:[0,0,0],lineColor:[0,0,0],lineWidth:.4,valign:'middle',overflow:'linebreak'},
+      headStyles:{fillColor:[91,33,182],textColor:255,fontStyle:'bold',halign:'center'},
+      columnStyles:{0:{halign:'center',cellWidth:24},1:{cellWidth:78},2:{cellWidth:56},3:{cellWidth:96},4:{cellWidth:62},5:{cellWidth:56},6:{cellWidth:130,fontStyle:'bold'},7:{cellWidth:90},8:{halign:'center',cellWidth:48},9:{halign:'center',cellWidth:44,fontStyle:'bold'}},
+      margin:{left:40,right:40,bottom:80}
+    });
+    pdfSignatureBlock(doc);
+  });
+  doc.save('teacher-paper-requirement.pdf');
+  toast(`Downloaded Teacher Paper Requirement PDF — ${data.length} teacher(s), ${data.reduce((n,d)=>n+d.papers,0)} paper(s)`,'ok');
+}
 /* ================= EXAMS PER DAY ================= */
 function examLoadRows(){
   const min=Math.max(2, +state.examLoadMin || 3);
@@ -3498,7 +3756,7 @@ function renderSeating(){
       <summary>✓ ${waitingStudents.length} student${waitingStudents.length===1?' is':'s are'} placed — their other paper at the same time is still waiting <span class="desc">(click to show · it can't be seated at that time: drag that paper to a session at a different time, or leave it for later)</span></summary>
       <div class="clash-student-list" style="margin-top:8px">${waitingStudents.map(clashCardHTML).join('')}</div>
     </details>` : ''}
-    ${duplicateEnrollmentHTML()}
+    ${duplicateEnrollmentHTML(clashCardHTML)}
      <div class="clash-help">Manual seating remains available after program/term grouping. Manual placement ignores the automatic course-per-room limit, is marked with a purple border, and is retained during subsequent seating generation when the placement is still valid.</div>
   </div>`;
   function clashCardHTML({student,items}){
@@ -3748,25 +4006,30 @@ function duplicateEnrollmentList(){
   });
   return out.sort((a,b)=>String(a.student.rollNo).localeCompare(String(b.student.rollNo),undefined,{numeric:true}));
 }
-function duplicateEnrollmentHTML(){
+function duplicateEnrollmentHTML(cardFn){
   const list=duplicateEnrollmentList();
   if(!list.length) return '';
-  const roomName=id=>{ const r=state.rooms.find(x=>x.id===id); return r?r.name:id; };
+  // Same card as the clash queue: checkbox on the card and on every course
+  // chip, drag to a seat / the park, and ✓ Placed on the section in use.
+  const asItems=({student,subjects})=>{
+    const bySess=new Map(), unscheduled=[];
+    subjects.flat().forEach(x=>{ if(!x.sess){ unscheduled.push(x); return; } if(!bySess.has(x.sess.id)) bySess.set(x.sess.id,{sessionId:x.sess.id,session:x.sess,courseIds:[]}); bySess.get(x.sess.id).courseIds.push(x.c.id); });
+    const items=[...bySess.values()].sort((a,b)=>((a.session.date||'')+(a.session.startTime||'')).localeCompare((b.session.date||'')+(b.session.startTime||'')));
+    return {student, items, unscheduled};
+  };
+  const cards=list.map(asItems).map(o=>{
+    let html=cardFn ? cardFn({student:o.student, items:o.items}) : '';
+    if(o.unscheduled.length){
+      const extra=`<div style="margin-top:5px"><span class="manual-badge" style="background:#f1f5f9;color:#475569">Not scheduled</span> ${o.unscheduled.map(x=>`<span class="clash-course-chip">${esc(x.c.code)} <span style="font-weight:400">— ${esc(x.c.title||'')}</span> <small>${esc(x.c.section||'')}</small></span>`).join('')}</div>`;
+      html = html ? html.replace(/(<div style="font-size:9.5px;color:#b91c1c;margin-top:6px">)/, extra+'$1') : `<div class="clash-student-card"><div class="cs-name">${esc(o.student.name)}</div><div class="cs-meta">ID: ${esc(o.student.rollNo)}</div>${extra}</div>`;
+    }
+    return html.replace('class="clash-student-card"','class="clash-student-card dup-card"');
+  });
   return `<details class="dup-enroll" ${_dupOpen?'open':''} ontoggle="_dupOpen=this.open">
-    <summary>🔁 Duplicate enrollment — ${list.length} student${list.length===1?'':'s'} enrolled in 2+ sections of the same subject
-      <span class="desc">(not a clash: each student writes the subject once — one section is seated, the other is skipped. Correct the enrollment data if a section is wrong.)</span>
+    <summary>🔁 Duplicate courses — ${list.length} student${list.length===1?' is':'s are'} enrolled in the same course (same course name) in 2+ sections
+      <span class="desc">(the student writes it once — ✓ Placed shows the section in use. To switch section, tick that course and drag the card onto an empty seat; the old seat is released.)</span>
       <button class="btn sm ghost" style="margin-left:6px" onclick="event.preventDefault();event.stopPropagation();xlsxDuplicateEnrollment()">⬇ Download list</button></summary>
-    <div class="clash-student-list" style="margin-top:8px">${list.map(({student,subjects})=>`
-      <div class="clash-student-card dup-card">
-        <div class="cs-name">${esc(student.name)}</div>
-        <div class="cs-meta">ID: ${esc(student.rollNo)} · ${esc(student.program||'')} · ${esc(student.section||'')}</div>
-        ${subjects.map(sub=>`<div style="margin-top:6px"><span class="manual-badge" style="background:#fef3c7;color:#92400e">${esc(sub[0].c.title||sub[0].c.code)}</span>
-          ${sub.map(x=>`<div class="dup-row ${x.seat?'is-placed':''}">
-            <b>${esc(x.c.code)}</b> <small>${esc(x.c.section||'')}</small>${x.c.faculty?` · 👤 ${esc(x.c.faculty)}`:''}
-            ${x.sess?` · ${esc(x.sess.day||dayName(x.sess.date))} ${esc(x.sess.date)} ${esc(x.sess.label)}`:' · <i>not scheduled</i>'}
-            ${x.seat?`<span class="placed-badge" title="${esc(roomName(x.seat.roomId))}, Row ${x.seat.row}, Column ${x.seat.col}">✓ Placed · ${esc(roomName(x.seat.roomId))} R${x.seat.row}C${x.seat.col}</span>`:`<span class="dup-skip">skipped — duplicate</span>`}
-          </div>`).join('')}</div>`).join('')}
-      </div>`).join('')}</div>
+    <div class="clash-student-list" style="margin-top:8px">${cards.join('')}</div>
   </details>`;
 }
 function xlsxDuplicateEnrollment(){
@@ -3958,6 +4221,149 @@ function parkedStudentCardHTML(p){
     <div class="park-meta">ID: ${esc(st?.rollNo||p.studentId)} · <b>${esc(c?.code||p.courseId)}</b>${c?.title?' — '+esc(c.title):''}</div>
   </div>`;
 }
+/* 💡 Hover hint in the Student Park: where the parked students of one course
+   can be seated. Rooms of THIS session with enough safe seats (not beside the
+   same subject) first; if the session can't hold them all, the best other
+   sessions (no clash for any of them). Each line has a "Place here" button. */
+function parkPlacementHint(sessId, courseId, list){
+  const n=list.length; if(!n) return '';
+  const c=state.courses.find(x=>x.id===courseId);
+  const lab=!!(c&&c.isLab);
+  const safe=safeFreeSeats(sessId, courseId);
+  const rooms=state.rooms.filter(r=>r.active!==false).map(r=>{
+    const used=state.seating.filter(x=>x.sessionId===sessId&&x.roomId===r.id).length;
+    return {r, free:safe.perRoom[r.id]||0, used, kindOk:!!r.isLab===lab};
+  }).filter(x=>x.free>0)
+    .sort((a,b)=>(b.kindOk-a.kindOk) || ((b.free>=n)-(a.free>=n)) || ((b.used>0)-(a.used>0)) || (a.free>=n&&b.free>=n ? a.free-b.free : b.free-a.free))
+    .slice(0,4);
+  const sess=state.sessions.find(s=>s.id===sessId);
+  let html=`<div class="ph-title">💡 Where to seat these ${n} student${n===1?'':'s'} (${esc(c?c.code:'')})</div>`;
+  if(rooms.length){
+    html+=`<div class="ph-sub">In ${esc(sess?sess.label+' '+sess.date:'this session')} — safe seats per room:</div>`+rooms.map(x=>
+      `<div class="ph-row"><span><b>${esc(x.r.name)}</b> · ${x.free} safe seat${x.free===1?'':'s'}${x.free>=n?' <span class="ph-ok">fits all</span>':''}${x.used?'':' · empty'}${x.kindOk?'':' · '+(x.r.isLab?'lab':'not a lab')}</span>
+        <button type="button" onclick="event.stopPropagation();placeParkGroupHere('${esc(courseId)}','${esc(sessId)}','${esc(x.r.id)}')">Place here</button></div>`).join('');
+  }
+  if(safe.total<n){
+    const grp={courseId, entries:list.map(p=>({studentId:p.studentId,courseId,fromSessionId:p.sessionId,kind:'park'}))};
+    const others=suggestSessionsForGroup(grp,3).filter(o=>o.sess.id!==sessId);
+    html+=`<div class="ph-warn">Only ${safe.total} safe seat${safe.total===1?'':'s'} left in this session.</div>`;
+    if(others.length){
+      html+=`<div class="ph-sub">Other times with room (no clash for any of them):</div>`+others.map(o=>{ const best=bestRoomForGroup(c,n,o);
+        return `<div class="ph-row"><span><b>${esc(o.sess.label)}</b> · ${esc(o.sess.day||dayName(o.sess.date))} ${esc(reportDMY(o.sess.date))} · ${o.free} safe seats${best?' → '+esc(best.room.name):''}</span>
+        <button type="button" onclick="event.stopPropagation();placeParkGroupHere('${esc(courseId)}','${esc(o.sess.id)}','${esc(best?best.room.id:'')}','${esc(sessId)}')">Place here</button></div>`; }).join('');
+    } else html+=`<div class="ph-sub">No other session has a clash-free time for all of them — seat them one by one or add a room.</div>`;
+  }
+  if(!rooms.length && safe.total>=n) html+=`<div class="ph-sub">Drop them on any empty seat that is not next to ${esc(c?c.code:'this subject')}.</div>`;
+  return `<span class="park-hint" tabindex="0" onmouseenter="showParkHint(this)" onmouseleave="hideParkHintSoon()" onfocus="showParkHint(this)" onclick="event.stopPropagation();showParkHint(this)">💡<template class="park-hint-tpl">${html}</template></span>`;
+}
+/* 💡 next to "Select all parked": sessions where ALL parked students of this
+   park (every course) can sit together on the same day & time -- nobody has
+   another exam then, and every course has enough safe seats (not beside the
+   same subject) -- with the best rooms. "Place all here" seats them all. */
+function parkAllSessionOptions(sessId, list){
+  const byCourse=new Map(); list.forEach(p=>{ if(!byCourse.has(p.courseId)) byCourse.set(p.courseId,[]); byCourse.get(p.courseId).push(p); });
+  const n=list.length;
+  const exams=new Map(); // date -> other exams of these students
+  const ids=new Set(list.map(p=>p.studentId));
+  ids.forEach(sid=>{ const st=state.students.find(x=>x.id===sid); (st?.courseIds||[]).forEach(cid=>{ if(byCourse.has(cid)) return; const s=effectiveSessionFor(sid,cid); if(s) exams.set(s.date,(exams.get(s.date)||0)+1); }); });
+  const own=state.sessions.find(s=>s.id===sessId);
+  const out=[];
+  state.sessions.forEach(s=>{
+    if(list.some(p=>timeClashesFor(p.studentId,p.courseId,s.id).length)) return;
+    let ok=true; const perCourse=[];
+    byCourse.forEach((l,cid)=>{ const sf=safeFreeSeats(s.id,cid); perCourse.push({cid,need:l.length,safe:sf.total}); if(sf.total<l.length) ok=false; });
+    const rooms=roomUsageInSession(s.id); const free=rooms.reduce((a,r)=>a+r.free,0);
+    if(!ok || free<n) return;
+    out.push({s, free, perCourse, own:s.id===sessId, sameDay:own&&s.date===own.date, load:(exams.get(s.date)||0)/Math.max(1,ids.size),
+      rooms:rooms.filter(r=>r.free>0).sort((a,b)=>((b.used>0)-(a.used>0))||b.free-a.free).slice(0,4)});
+  });
+  out.sort((a,b)=>(b.own-a.own)||(a.load-b.load)||(b.sameDay-a.sameDay)||(b.free-a.free));
+  return out.slice(0,3);
+}
+function parkAllPlacementHint(sessId, list){
+  if(!list || list.length<1) return '';
+  const nCourses=new Set(list.map(p=>p.courseId)).size;
+  const opts=parkAllSessionOptions(sessId, list);
+  let html=`<div class="ph-title">💡 Where can all ${list.length} parked student${list.length===1?'':'s'} sit together (${nCourses} course${nCourses===1?'':'s'}, same day &amp; time)?</div>`;
+  if(!opts.length){
+    html+=`<div class="ph-warn">No single session fits all of them (a clash for some student, or not enough safe seats for a course).</div><div class="ph-sub">Use the 💡 next to each course below to place them course by course.</div>`;
+  } else {
+    html+=opts.map((o,i)=>`<div class="ph-row" style="flex-direction:column;align-items:stretch">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:6px">
+        <span><b>${i===0?'⭐ ':''}${esc(o.s.label)}</b> · ${esc(o.s.day||dayName(o.s.date))} ${esc(reportDMY(o.s.date))} · ${esc(o.s.startTime)}-${esc(o.s.endTime)}${o.own?' <span class="ph-ok">this session</span>':''}</span>
+        <button type="button" onclick="event.stopPropagation();placeAllParkedHere('${esc(sessId)}','${esc(o.s.id)}')">Place all here</button></div>
+      <div class="ph-sub" style="margin:2px 0 0">${o.perCourse.map(pc=>{ const c=state.courses.find(x=>x.id===pc.cid); return `<b>${esc(c?c.code:'')}</b>${c&&c.section?' '+esc(c.section):''}: ${pc.need} need · ${pc.safe} safe`; }).join(' · ')}</div>
+      <div class="ph-sub" style="margin:0">Rooms: ${o.rooms.map(r=>`${esc(r.room.name)} (${r.free} free${r.used?'':', empty'})`).join(', ')}</div>
+    </div>`).join('');
+  }
+  return `<span class="park-hint" tabindex="0" style="margin-left:6px" onmouseenter="showParkHint(this)" onmouseleave="hideParkHintSoon()" onfocus="showParkHint(this)" onclick="event.preventDefault();event.stopPropagation();showParkHint(this)">💡<template class="park-hint-tpl">${html}</template></span>`;
+}
+// Seat EVERY parked student of the park session `fromSessId` in session
+// `toSessId` (same day & time for all), course by course, best rooms first,
+// one-column gap rule respected. Anyone who can't be seated stays parked.
+function placeAllParkedHere(fromSessId, toSessId){
+  { const b=document.getElementById('parkHintFloat'); if(b) b.style.display='none'; }
+  let entries=(state.parkedStudents||[]).filter(p=>p.sessionId===fromSessId);
+  if(!entries.length){ toast('The park is empty','warn'); return; }
+  if(toSessId!==fromSessId){
+    const {ok}=filterTimeClashes(entries, toSessId); if(!ok.length) return;
+    ok.forEach(e=>{ setStudentSession(e.studentId,e.courseId,toSessId); addStudentToPark(toSessId,e.studentId,e.courseId); });
+    entries=ok.map(e=>({...e,sessionId:toSessId}));
+  }
+  const byCourse=new Map(); entries.forEach(e=>{ if(!byCourse.has(e.courseId)) byCourse.set(e.courseId,[]); byCourse.get(e.courseId).push(e); });
+  let placed=0, left=0; const where=new Map();
+  [...byCourse.entries()].sort((a,b)=>b[1].length-a[1].length).forEach(([cid,l])=>{
+    const c=state.courses.find(x=>x.id===cid);
+    const safe=safeFreeSeats(toSessId,cid);
+    const used=new Set(state.seating.filter(x=>x.sessionId===toSessId).map(x=>x.roomId));
+    const rooms=state.rooms.filter(r=>r.active!==false && (safe.perRoom[r.id]||0)>0)
+      .sort((a,b)=>((!!b.isLab===!!(c&&c.isLab))-(!!a.isLab===!!(c&&c.isLab))) || (((safe.perRoom[b.id]||0)>=l.length)-((safe.perRoom[a.id]||0)>=l.length)) || (used.has(b.id)-used.has(a.id)) || ((safe.perRoom[b.id]||0)-(safe.perRoom[a.id]||0)));
+    const here=(state.parkedStudents||[]).filter(p=>p.sessionId===toSessId && p.courseId===cid && l.some(e=>e.studentId===p.studentId));
+    const res=smartSeatEntries(toSessId, here, rooms[0]?rooms[0].id:null, 1);
+    placed+=res.placed; left+=res.left.length;
+    res.perRoom.forEach((k,rid)=>{ const nm=state.rooms.find(r=>r.id===rid)?.name||rid; where.set(nm,(where.get(nm)||0)+k); });
+  });
+  save(); renderSeating();
+  const s=state.sessions.find(x=>x.id===toSessId);
+  toast(`${left?'⚠':'✓'} ${placed} parked student${placed===1?'':'s'} seated together in ${s?s.label+' '+reportDMY(s.date):'the session'} (${[...where.entries()].map(([r,k])=>`${r}: ${k}`).join(', ')})${left?` · ${left} still parked (no safe seat left)`:''}`, left?'warn':'ok');
+}
+// The park sidebar scrolls, so the popup is positioned against the window,
+// next to the 💡, and kept on screen.
+let _parkHintTimer=null;
+function parkHintBox(){
+  let b=document.getElementById('parkHintFloat');
+  if(!b){ b=document.createElement('div'); b.id='parkHintFloat'; b.className='park-hint-pop';
+    b.onmouseenter=()=>clearTimeout(_parkHintTimer); b.onmouseleave=()=>hideParkHintSoon();
+    document.body.appendChild(b); }
+  return b;
+}
+function showParkHint(el){
+  clearTimeout(_parkHintTimer);
+  const tpl=el.querySelector('template.park-hint-tpl'); if(!tpl) return;
+  const b=parkHintBox(); b.innerHTML=tpl.innerHTML; b.style.display='block';
+  const r=el.getBoundingClientRect(), w=b.offsetWidth||310, h=b.offsetHeight||200;
+  let left=r.right+10; if(left+w>window.innerWidth-8) left=Math.max(8,r.left-w-10);
+  const top=Math.max(8,Math.min(r.top-8, window.innerHeight-h-8));
+  b.style.left=left+'px'; b.style.top=top+'px';
+}
+function hideParkHintSoon(){ clearTimeout(_parkHintTimer); _parkHintTimer=setTimeout(()=>{ const b=document.getElementById('parkHintFloat'); if(b) b.style.display='none'; },350); }
+// "Place here" from the hint: seats exactly these parked students (this
+// course, this park session) in the chosen session/room, gap rule respected.
+function placeParkGroupHere(courseId, sessId, roomId, fromSessId){
+  { const b=document.getElementById('parkHintFloat'); if(b) b.style.display='none'; }
+  const from=fromSessId||sessId;
+  const entries=(state.parkedStudents||[]).filter(p=>p.sessionId===from && p.courseId===courseId);
+  if(!entries.length){ toast('Nothing parked for that course any more','warn'); return; }
+  if(sessId!==from){
+    const {ok}=filterTimeClashes(entries, sessId); if(!ok.length) return;
+    ok.forEach(e=>{ setStudentSession(e.studentId,e.courseId,sessId); addStudentToPark(sessId,e.studentId,e.courseId); });
+  }
+  const here=(state.parkedStudents||[]).filter(p=>p.sessionId===sessId && p.courseId===courseId);
+  const res=smartSeatEntries(sessId, here, roomId, 1, {noOverflow:true});
+  save(); renderSeating();
+  const c=state.courses.find(x=>x.id===courseId), r=state.rooms.find(x=>x.id===roomId);
+  reportSmartSeat(res, `${c?c.code:courseId} → ${r?r.name:'room'}`);
+}
 function renderStudentParkSidebar(){
   const el=document.getElementById('studentParkSidebar'); if(!el) return;
   if(_parkTab==='course'){ renderCourseParkSidebar(el); return; }
@@ -3985,7 +4391,7 @@ function renderStudentParkSidebar(){
     </select>
     <div class="student-park-help" style="margin-top:2px">Drop zone: <b>${esc(selected.label)} · ${esc(selected.date)}</b></div>
     <div class="park-list">${parkedForSession.length
-      ? `<div class="park-course-head" style="display:flex;justify-content:space-between;align-items:center;color:#334155;border-bottom:none"><label style="cursor:pointer;display:flex;align-items:center;gap:4px"><input type="checkbox" onclick="selectAllParked(event,'${esc(selected.id)}',null,this.checked)" ${parkedForSession.length&&parkedForSession.every(p=>_selectedDragKeys.has('park|'+dragSelectionKey(p)))?'checked':''}> Select all parked (${parkedForSession.length})</label><button type="button" class="btn sm ghost" style="padding:1px 6px;font-size:10px" onclick="clearDragSelection();renderStudentParkSidebar()">Clear</button></div>`+parkedGroupedByCourse(parkedForSession).map(([cid,list])=>{ const c=state.courses.find(x=>x.id===cid); const allSel=list.every(p=>_selectedDragKeys.has('park|'+dragSelectionKey(p))); return `<div class="park-course-head" style="display:flex;align-items:flex-start;gap:5px"><input type="checkbox" title="Select every parked student of this course -- then drag any of them onto a seat" ${allSel?'checked':''} onclick="selectAllParked(event,'${esc(selected.id)}','${esc(cid)}',this.checked)" style="margin-top:1px"><span>${esc(c?courseLabel(c):cid)}${c&&c.section?' ('+esc(c.section)+')':''} · ${list.length} <span style="font-weight:400;color:#7c3aed">— select all</span></span></div>`+list.map(parkedStudentCardHTML).join(''); }).join('')
+      ? `<div class="park-course-head" style="display:flex;justify-content:space-between;align-items:center;color:#334155;border-bottom:none"><label style="cursor:pointer;display:flex;align-items:center;gap:4px"><input type="checkbox" onclick="selectAllParked(event,'${esc(selected.id)}',null,this.checked)" ${parkedForSession.length&&parkedForSession.every(p=>_selectedDragKeys.has('park|'+dragSelectionKey(p)))?'checked':''}> Select all parked (${parkedForSession.length})</label>${parkAllPlacementHint(selected.id,parkedForSession)}<button type="button" class="btn sm ghost" style="padding:1px 6px;font-size:10px" onclick="clearDragSelection();renderStudentParkSidebar()">Clear</button></div>`+parkedGroupedByCourse(parkedForSession).map(([cid,list])=>{ const c=state.courses.find(x=>x.id===cid); const allSel=list.every(p=>_selectedDragKeys.has('park|'+dragSelectionKey(p))); return `<div class="park-course-head" style="display:flex;align-items:flex-start;gap:5px"><input type="checkbox" title="Select every parked student of this course -- then drag any of them onto a seat" ${allSel?'checked':''} onclick="selectAllParked(event,'${esc(selected.id)}','${esc(cid)}',this.checked)" style="margin-top:1px"><span>${esc(c?courseLabel(c):cid)}${c&&c.section?' ('+esc(c.section)+')':''} · ${list.length} <span style="font-weight:400;color:#7c3aed">— select all</span></span>${parkPlacementHint(selected.id,cid,list)}</div>`+list.map(parkedStudentCardHTML).join(''); }).join('')
       : '<div class="park-empty">Drop one or more student names here to park them temporarily.</div>'}</div>
   </div>`;
   requestAnimationFrame(()=>window.scrollTo(savedScrollX,savedScrollY));
@@ -4042,8 +4448,19 @@ function assignManualClashSeat(studentId, sessionId, roomId, row, col, preferred
   state.manualSeatOverrides.push(ov);
   state.seating.push({...ov,manual:true});
   state.parkedStudents=(state.parkedStudents||[]).filter(p=>!(p.studentId===studentId&&p.courseId===chosen.id));
+  // Same course (same name) in another section = a duplicate enrollment:
+  // the student writes it once, so seating this section releases the other.
+  const subj=paperRootOf(chosen.id);
+  const switched=state.seating.filter(x=>x.studentId===studentId && x.courseId!==chosen.id && paperRootOf(x.courseId)===subj);
+  if(switched.length){
+    const drop=x=>x.studentId===studentId && x.courseId!==chosen.id && paperRootOf(x.courseId)===subj;
+    state.seating=state.seating.filter(x=>!drop(x));
+    state.manualSeatOverrides=state.manualSeatOverrides.filter(x=>!drop(x));
+    state.parkedStudents=(state.parkedStudents||[]).filter(x=>!drop(x));
+  }
   markJustPlaced(sessionId, roomId, row, col);
   save(); renderSeating();
+  if(switched.length) setTimeout(()=>toast(`🔁 Section switched — ${st.name}'s seat for the other section of ${chosen.title||chosen.code} was released`,'ok'),900);
   toast(`✓ ${st.name} seated for ${courseLabel(chosen)} at ${room.name}, Row ${row}, Column ${col}${moved?` (moved to ${sess.label} ${sess.date} for this student only)`:''}`,'ok');
 }
 function addStudentToPark(sessionId, studentId, courseId){
@@ -4233,7 +4650,9 @@ function overlappingSessionIds(sessId){
 function timeClashesFor(studentId, courseId, sessId){
   const ov=new Set(overlappingSessionIds(sessId));
   const out=new Map();
-  const add=(cid,sid)=>{ if(cid===courseId || out.has(cid)) return; const c=state.courses.find(x=>x.id===cid), ss=state.sessions.find(x=>x.id===sid); if(c) out.set(cid,{course:c,session:ss}); };
+  const subj=paperRootOf(courseId);
+  // another section of the SAME course (same name) is not a clash -- it is the seat being switched
+  const add=(cid,sid)=>{ if(cid===courseId || out.has(cid) || paperRootOf(cid)===subj) return; const c=state.courses.find(x=>x.id===cid), ss=state.sessions.find(x=>x.id===sid); if(c) out.set(cid,{course:c,session:ss}); };
   (state.seating||[]).forEach(x=>{ if(x.studentId===studentId && ov.has(x.sessionId)) add(x.courseId,x.sessionId); });
   (state.studentSessionMoves||[]).forEach(m=>{ if(m.studentId===studentId && ov.has(m.sessionId)) add(m.courseId,m.sessionId); });
   const st=state.students.find(x=>x.id===studentId);
@@ -4307,7 +4726,8 @@ function courseLabel(c, withSection){
        course tagged to specific rooms tries those first, and the per-room
        "max courses" cap is respected for rooms chosen automatically.
      • Whoever still can't be seated without breaking the rule stays parked. */
-function smartSeatEntries(sessionId, entries, targetRoomId, startCol){
+function smartSeatEntries(sessionId, entries, targetRoomId, startCol, opts){
+  opts=opts||{};
   const rollOf = id => { const st=state.students.find(x=>x.id===id); return st?String(st.rollNo||id):String(id); };
   const activeRooms = state.rooms.filter(r=>r.active!==false);
   const targetRoom = state.rooms.find(r=>r.id===targetRoomId) || null;
@@ -4400,7 +4820,13 @@ function smartSeatEntries(sessionId, entries, targetRoomId, startCol){
         const col = cols[0];
         const cell = (grid.get(room.id)||new Map()).get(col);
         let progressed = false;
-        for(let r=1;r<=roomRows(room) && idx<list.length;r++){
+        // When the drop landed on a seat of this very column, start at that
+        // row (then wrap to the rows above it).
+        const nRows=roomRows(room);
+        const rowOrder=[...Array(nRows)].map((_,i)=>i+1);
+        if(opts.startRow && room===targetRoom && col===startCol){ const k=Math.min(Math.max(1,opts.startRow),nRows); rowOrder.splice(0,nRows,...rowOrder.slice(k-1),...rowOrder.slice(0,k-1)); }
+        for(const r of rowOrder){
+          if(idx>=list.length) break;
           if(cell && cell.rows.has(r)) continue;
           const e = list[idx++];
           const seat = {sessionId, roomId:room.id, row:r, col, studentId:e.studentId, courseId:e.courseId};
@@ -4417,7 +4843,7 @@ function smartSeatEntries(sessionId, entries, targetRoomId, startCol){
       }
     };
     if(targetRoom) fillRoom(targetRoom, Math.max(1, startCol||1));
-    if(idx<list.length){
+    if(idx<list.length && !opts.noOverflow){
       for(const room of overflowRooms(course, list.length-idx)){
         fillRoom(room, 1);
         if(idx>=list.length) break;
@@ -4446,7 +4872,7 @@ function reportSmartSeat(res, label){
     toast(`✓ ${label}: ${res.placed} seated with a one-column gap (${where})${moved?' -- overflow moved to another room':''}`,'ok');
   }
 }
-function assignParkedStudents(entries, sessionId, roomId, row, col){
+function assignParkedStudents(entries, sessionId, roomId, row, col, exactSeat){
   // Parked students from ANY session may be dropped here: entries from
   // another session are moved into this session first (for those students
   // only), then seated like everyone else.
@@ -4455,13 +4881,37 @@ function assignParkedStudents(entries, sessionId, roomId, row, col){
   if(!valid.length){toast('Those students are no longer in the park','warn');return;}
   const {ok:allowed}=filterTimeClashes(valid, sessionId);
   if(!allowed.length){ clearDragSelection(); return; }
+  // ONE student dropped on a seat -> exactly that seat, or a clear reason why
+  // not (the student then stays in the park -- never silently put elsewhere,
+  // e.g. back in the seat they were parked from).
+  if(exactSeat && allowed.length===1 && row && col){
+    const e=allowed[0];
+    const room=state.rooms.find(r=>r.id===roomId);
+    const st=state.students.find(x=>x.id===e.studentId), c=state.courses.find(x=>x.id===e.courseId);
+    if(state.seating.some(x=>x.sessionId===sessionId&&x.roomId===roomId&&x.row===row&&x.col===col)){ toast('That seat is already occupied -- drop on an empty seat','warn'); return; }
+    const nb=sameSubjectNeighbour(sessionId, roomId, row, col, e.courseId, e);
+    if(nb){ toast(sameSubjectBlockMsg(nb, e.courseId),'err'); return; }
+    if(e.sessionId!==sessionId) setStudentSession(e.studentId,e.courseId,sessionId);
+    state.seating=state.seating.filter(x=>!(x.studentId===e.studentId&&x.courseId===e.courseId));
+    state.manualSeatOverrides=(Array.isArray(state.manualSeatOverrides)?state.manualSeatOverrides:[]).filter(x=>!(x.studentId===e.studentId&&x.courseId===e.courseId));
+    const seat={sessionId,roomId,row,col,studentId:e.studentId,courseId:e.courseId};
+    state.manualSeatOverrides.push(seat); state.seating.push({...seat,manual:true});
+    state.parkedStudents=(state.parkedStudents||[]).filter(p=>!(p.studentId===e.studentId&&p.courseId===e.courseId));
+    if(!state.scheduled.some(sc=>sc.courseId===e.courseId)) ensureScheduled(sessionId, e.courseId);
+    markJustPlaced(sessionId, roomId, row, col);
+    save(); renderSeating(); clearDragSelection();
+    toast(`✓ ${st?st.name:e.studentId} (${c?c.code:''}) seated at ${room?room.name:roomId}, Row ${row}, Column ${col}`,'ok');
+    return;
+  }
   const candidates=allowed.map(e=>{
     if(e.sessionId!==sessionId){ setStudentSession(e.studentId,e.courseId,sessionId); addStudentToPark(sessionId,e.studentId,e.courseId); }
     return {...e, sessionId};
   });
-  // Auto-shuffle: keep a one-column gap between columns of the same paper and
-  // overflow into other rooms when the dropped-on room has no gap-safe space.
-  const res=smartSeatEntries(sessionId, candidates, roomId, col);
+  // Several students: fill from the dropped seat downwards in the room that
+  // was chosen, keeping a one-column gap between columns of the same paper.
+  // They stay in that room -- nobody is sent back to another room (or to the
+  // seats they were parked from); whoever doesn't fit stays parked.
+  const res=smartSeatEntries(sessionId, candidates, roomId, col, {startRow:row||1, noOverflow:true});
   save(); renderSeating();
   clearDragSelection();
   const codes=[...new Set(candidates.map(e=>state.courses.find(c=>c.id===e.courseId)?.code||e.courseId))];
@@ -4500,7 +4950,7 @@ function dropSeatStudent(ev){
   const p=readSeatDragPayload(ev); if(!p) return;
   const t=ev.currentTarget;
   if(p.type==='coursepark') placeParkedCourses(p.courseIds,t.dataset.dropSession,t.dataset.dropRoom,+t.dataset.dropRow,+t.dataset.dropCol,p.sessionId);
-  else if(p.type==='parked') assignParkedStudents(p.entries||[p],t.dataset.dropSession,t.dataset.dropRoom,+t.dataset.dropRow,+t.dataset.dropCol);
+  else if(p.type==='parked') assignParkedStudents(p.entries||[p],t.dataset.dropSession,t.dataset.dropRoom,+t.dataset.dropRow,+t.dataset.dropCol,true);
   else if(p.type==='seat') moveSeatedStudentSeat(p,t.dataset.dropSession,t.dataset.dropRoom,+t.dataset.dropRow,+t.dataset.dropCol);
   else if(p.type==='clash'){
     // If a specific course chip was checked for this session, use it
@@ -4990,7 +5440,13 @@ function totalRoomCap(){
   return state.rooms.filter(r=>r.active!==false).reduce((n,r)=>n+roomCapacity(r),0);
 }
 // Move a course from its current session to a new session (used by conflict fix buttons)
-function moveCourseToSession(courseId, newSessId){
+function moveCourseToSession(courseId, newSessId, _single){
+  // A section of a same-teacher paper never moves alone: every section of that
+  // teacher's course follows it to the new day & time.
+  if(!_single){
+    const grp=teacherGroupIds(courseId).filter(id=>id!==courseId && state.scheduled.some(sc=>sc.courseId===id && sc.sessionId!==newSessId));
+    if(grp.length){ moveCourseToSession(courseId,newSessId,true); grp.forEach(id=>moveCourseToSession(id,newSessId,true)); toast(`Moved with ${grp.length} other section(s) of the same teacher's course -- re-run 🪑 Generate Seating`,'ok'); return; }
+  }
   const entry = state.scheduled.find(s=>s.courseId===courseId);
   if(!entry){ toast('Course not in schedule','err'); return; }
   const oldSessId = entry.sessionId;
@@ -5085,6 +5541,9 @@ function impactBadge(imp){
 }
 
 function tryMoveCourse(courseId, newSessId, refreshSelectId){
+  // The whole same-teacher paper moves together, so check every section.
+  const grp=teacherGroupIds(courseId).filter(id=>id!==courseId && state.scheduled.some(sc=>sc.courseId===id));
+  for(const id of grp){ const im=previewMoveImpact(id, newSessId); if(im && im.newClashes){ toast(`⛔ Blocked -- this course is one paper with its teacher's other section(s); moving them all would give ${im.newClashes} student(s) a clash at that time.`,'err'); if(refreshSelectId){ const el=document.getElementById(refreshSelectId); if(el) el.value=''; } return; } }
   const imp = previewMoveImpact(courseId, newSessId);
   if(!imp){ toast('Invalid move','err'); return; }
   if(imp.newClashes){
@@ -6741,17 +7200,114 @@ function openCourseGroupBuilder(){
   save(); renderCourseGroupsCard();
   toast(`Group created with ${matched.length} course(s) -- re-run Auto Schedule to apply`,'ok');
 }
+/* On-screen check for "same teacher, same course": for every teacher's
+   course (same course name), lists
+   • students of that paper who have ANOTHER exam at the same time (clashes),
+   • sections of it that ended up on a different day/time (split paper). */
+// All course ids that form ONE paper with courseId: same teacher (any of its
+// teachers) + same course name. Just [courseId] when the rule is off.
+function teacherGroupIds(courseId){
+  if(state.groupSameTeacherCourse===false) return [courseId];
+  const c=state.courses.find(x=>x.id===courseId); if(!c || !String(c.faculty||'').trim()) return [courseId];
+  const tk=t=>t.toLowerCase().replace(/[^a-z0-9]/g,'');
+  const mine=new Set(splitTeachers(c.faculty).map(tk)), root=paperRootOf(courseId);
+  const ids=state.courses.filter(x=>String(x.faculty||'').trim() && paperRootOf(x.id)===root && splitTeachers(x.faculty).some(t=>mine.has(tk(t)))).map(x=>x.id);
+  return ids.length?ids:[courseId];
+}
+// Re-unite every same-teacher paper that is split over several sessions in the
+// CURRENT timetable: all its sections move to the one session (among those it
+// already uses, then any) with the fewest student clashes, enough room and the
+// teacher free. Clashes that remain are listed on the Auto Schedule tab.
+function combineTeacherPapers(silent){
+  const groups=teacherPaperGroups().filter(g=>new Set(g.rows.map(r=>r.sess&&r.sess.id)).size>1);
+  if(!groups.length){ if(!silent) toast('✓ Every same-teacher course is already on one day & time','ok'); return 0; }
+  const cap=totalRoomCap();
+  let moved=0, clashSum=0;
+  groups.forEach(g=>{
+    const ids=new Set(g.rows.map(r=>r.c.id));
+    const studs=new Set(); ids.forEach(id=>studentsOf(id).forEach(x=>studs.add(x)));
+    const teachers=new Set(splitTeachers(g.rows[0].c.faculty).map(t=>t.toLowerCase().replace(/[^a-z0-9]/g,'')));
+    const current=new Set(g.rows.map(r=>r.sess&&r.sess.id));
+    let best=null;
+    state.sessions.forEach(s=>{
+      const ovl=new Set(overlappingSessionIds(s.id));
+      const others=state.scheduled.filter(sc=>ovl.has(sc.sessionId) && !ids.has(sc.courseId));
+      // teacher busy with ANOTHER paper at that time?
+      if(others.some(sc=>{ const c=state.courses.find(x=>x.id===sc.courseId); return c && String(c.faculty||'').trim() && splitTeachers(c.faculty).some(t=>teachers.has(t.toLowerCase().replace(/[^a-z0-9]/g,''))) && paperRootOf(c.id)!==paperRootOf(g.rows[0].c.id); })) return;
+      const used=state.scheduled.filter(sc=>sc.sessionId===s.id && !ids.has(sc.courseId)).reduce((n,sc)=>n+(state.courses.find(c=>c.id===sc.courseId)?.studentCount||0),0);
+      if(used+studs.size>cap) return;
+      const busy=new Set(); others.forEach(sc=>studentsOf(sc.courseId).forEach(x=>busy.add(x)));
+      let clashes=0; studs.forEach(x=>{ if(busy.has(x)) clashes++; });
+      const sc=clashes*1000000 + (current.has(s.id)?0:500000) + used;
+      if(!best || sc<best.sc) best={s, sc, clashes};
+    });
+    if(!best) return;
+    state.scheduled.forEach(sc=>{ if(ids.has(sc.courseId) && sc.sessionId!==best.s.id){ sc.sessionId=best.s.id; moved++; } });
+    state.seating=state.seating.filter(x=>!ids.has(x.courseId) || x.sessionId===best.s.id);
+    clashSum+=best.clashes;
+  });
+  save(); if(!silent){ render(); toast(`🔗 Combined ${groups.length} same-teacher course(s) onto one day & time (${moved} section move(s))${clashSum?` — ${clashSum} student clash(es), listed on this tab`:''} -- re-run 🪑 Generate Seating`, clashSum?'warn':'ok'); }
+  return groups.length;
+}
+function teacherPaperGroups(){
+  const g=new Map();
+  state.scheduled.forEach(sc=>{
+    const c=state.courses.find(x=>x.id===sc.courseId); if(!c || !String(c.faculty||'').trim()) return;
+    splitTeachers(c.faculty).forEach(t=>{
+      const key=t.toLowerCase().replace(/[^a-z0-9]/g,'')+'|'+paperRootOf(c.id);
+      if(!g.has(key)) g.set(key,{teacher:t, title:c.title||c.code, rows:[]});
+      g.get(key).rows.push({c, sess:state.sessions.find(s=>s.id===sc.sessionId)});
+    });
+  });
+  return [...g.values()].filter(x=>x.rows.length>1);
+}
+function teacherPaperClashHTML(){
+  if(state.groupSameTeacherCourse===false) return '';
+  const groups=teacherPaperGroups();
+  if(!groups.length) return '';
+  const split=[], clashes=[], seenClash=new Set();
+  groups.forEach(gr=>{
+    const sessIds=[...new Set(gr.rows.map(r=>r.sess&&r.sess.id))];
+    if(sessIds.length>1) split.push(gr);
+    gr.rows.forEach(r=>{
+      if(!r.sess) return;
+      const ovl=new Set(overlappingSessionIds(r.sess.id));
+      studentsOfInSession(r.c.id, r.sess.id).forEach(sid=>{
+        const st=state.students.find(x=>x.id===sid); if(!st) return;
+        const others=(st.courseIds||[]).filter(cid=>cid!==r.c.id && paperRootOf(cid)!==paperRootOf(r.c.id))
+          .map(cid=>({cid, s:effectiveSessionFor(sid,cid)})).filter(o=>o.s && ovl.has(o.s.id));
+        if(!others.length) return;
+        // one row per student + time slot (a clash between two combined papers is listed once)
+        const key=sid+'|'+[r.c.id,...others.map(o=>o.cid)].map(paperRootOf).sort().join('+');
+        if(seenClash.has(key)) return; seenClash.add(key);
+        clashes.push({gr, r, st, others});
+      });
+    });
+  });
+  const okCount=groups.length-split.length;
+  return `<div class="card" style="border:1.5px solid ${clashes.length||split.length?'#f59e0b':'#86efac'};background:${clashes.length||split.length?'#fffbeb':'#f0fdf4'}">
+    <div class="row" style="justify-content:space-between;align-items:center;gap:8px"><h3 style="margin:0">👤 Same teacher, same course → same day &amp; time</h3>
+      ${split.length?`<button class="btn green" onclick="combineTeacherPapers()" title="Move every section of each split teacher course to one day & time (fewest clashes)">🔗 Combine now (${split.length})</button>`:''}</div>
+    <div class="desc">${okCount} of ${groups.length} teacher course(s) taught in 2+ sections are on ONE day &amp; time (one paper per teacher).${split.length?` <b style="color:#b45309">${split.length} are split across different times</b> (re-run ⚡ Auto Schedule, or a section was moved by hand).`:''} ${clashes.length?`<b style="color:#b91c1c">${clashes.length} student clash(es)</b> because of these combined papers — listed below and in Auto Seating → Clash Students.`:'No student clashes.'}</div>
+    ${split.length?`<div style="margin-top:8px">${split.map(gr=>`<div class="badge" style="background:#ffedd5;color:#9a3412;margin:2px;display:inline-block">${esc(gr.teacher)} · ${esc(gr.title)}: ${gr.rows.map(r=>`${esc(r.c.section||r.c.code)} → ${r.sess?esc(r.sess.date+' '+r.sess.label):'—'}`).join(' | ')}</div>`).join('')}</div>`:''}
+    ${clashes.length?`<div style="overflow:auto;max-height:300px;margin-top:8px"><table><thead><tr><th>Teacher · Course</th><th>Date / Session</th><th>Student</th><th>Class</th><th>Also has at the same time</th></tr></thead><tbody>
+      ${clashes.slice(0,400).map(x=>`<tr><td><b>${esc(x.gr.teacher)}</b><br>${esc(x.r.c.code)} — ${esc(x.gr.title)} (${esc(x.r.c.section||'')})</td><td>${esc(x.r.sess.day||dayName(x.r.sess.date))} ${esc(x.r.sess.date)}<br>${esc(x.r.sess.label)} ${esc(x.r.sess.startTime)}-${esc(x.r.sess.endTime)}</td><td>${esc(x.st.name)}<br><span class="desc">${esc(x.st.rollNo)}</span></td><td>${esc(x.st.section||'')}</td><td>${x.others.map(o=>{ const c=state.courses.find(z=>z.id===o.cid); return `<b>${esc(c?c.code:'')}</b> — ${esc(c?c.title:'')} (${esc(o.s.label)})`; }).join('<br>')}</td></tr>`).join('')}
+    </tbody></table>${clashes.length>400?`<div class="desc">First 400 of ${clashes.length}.</div>`:''}</div>`:''}
+  </div>`;
+}
 function renderSchedule(){
   const cg = document.getElementById('courseGroupingSel'); if(cg) cg.value = courseGroupingMode();
   const ct = document.getElementById('chkTeacherDays'); if(ct) ct.checked = state.groupTeacherDays !== false;
+  const ctc = document.getElementById('chkTeacherCourse'); if(ctc) ctc.checked = state.groupSameTeacherCourse !== false;
   const v = document.getElementById('scheduleView');
   if(!v) return;
   if(!state.scheduled.length){
     v.innerHTML = '<div class="empty-state">No schedule yet -- click ⚡ Auto Schedule.</div>';
     return;
   }
+  const _tpc = teacherPaperClashHTML();
   const dates = [...new Set(state.sessions.map(s=>s.date))].sort();
-  v.innerHTML = dates.map(date => {
+  v.innerHTML = _tpc + dates.map(date => {
     const daySessions = state.sessions.filter(s=>s.date===date);
     return `<div class="card"><h3>📅 ${date}</h3>` +
       daySessions.map(sess => {
@@ -6835,6 +7391,7 @@ const TAB_RENDERERS = {
   conflicts:    [renderConflicts],
   courseclashes:[renderCourseClashes],
   examload:     [renderExamLoad],
+  paperreq:     [renderPaperRequirement],
   occupancy:    [renderOccupancy],
   stuoccupancy: [renderStudentOccupancy],
   students:     [renderCourses, renderStudents, updateStats],
@@ -10322,7 +10879,7 @@ render();
 
 /* Every Excel export reports its own failure instead of dying silently. */
 (function guardExcelExports(){
-  ['downloadTemplate','downloadClashSeatingSheet','xlsxShortAttendanceReport','xlsxCourseWiseSeating','xlsxNoticeBoard','xlsxCourseSummary','xlsxFacultySummary','xlsxDepartmentSummary','xlsxAttendanceSheets','xlsxTimetableProgram','xlsxTimetableDay','xlsxStudentPapers','xlsxDaily','xlsxSeatingGrid','xlsxFaculty','xlsxInvigilationFacultyWise','xlsxInvigilation','xlsxExamLoad','xlsxDuplicateEnrollment'].forEach(name=>{
+  ['downloadTemplate','downloadClashSeatingSheet','xlsxShortAttendanceReport','xlsxCourseWiseSeating','xlsxNoticeBoard','xlsxCourseSummary','xlsxFacultySummary','xlsxDepartmentSummary','xlsxAttendanceSheets','xlsxTimetableProgram','xlsxTimetableDay','xlsxStudentPapers','xlsxDaily','xlsxSeatingGrid','xlsxFaculty','xlsxInvigilationFacultyWise','xlsxInvigilation','xlsxExamLoad','xlsxDuplicateEnrollment','xlsxPaperRequirement'].forEach(name=>{
     const fn=window[name]; if(typeof fn!=='function' || fn.__guarded) return;
     const fail=e=>{ console.error(name, e); toast(`Excel export failed (${name}): ${e&&e.message?e.message:e}`,'err'); };
     const g=function(...args){
