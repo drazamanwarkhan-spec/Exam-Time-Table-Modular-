@@ -254,6 +254,21 @@ tr:hover{background:#f8fafc}
 .badge:empty{display:none}
 .clash-waiting{margin-top:10px;border:1px solid #bbf7d0;background:#f0fdf4;border-radius:8px;padding:8px 10px}
 .clash-waiting summary{cursor:pointer;font-weight:600;color:#15803d;font-size:12.5px}
+.rdate{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;padding:3px 8px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;cursor:pointer}
+.rdate.on{background:#dbeafe;border-color:#3b82f6;color:#1e3a8a;font-weight:600}
+.suggest-card,.empty-card{padding:10px 14px}
+.suggest-card{border:1.5px solid #38bdf8;background:#f0f9ff}
+.empty-card{border:1.5px solid #86efac;background:#f7fef9}
+.suggest-card summary,.empty-card summary{cursor:pointer;font-size:13.5px}
+.suggest-row{border-top:1px dashed #bae6fd;padding:8px 0}
+.sg-head{font-size:12.5px}
+.sg-opts{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:8px;margin-top:6px}
+.sg-opt{background:#fff;border:1px solid #cbd5e1;border-radius:8px;padding:7px 9px;font-size:11.5px;display:flex;flex-direction:column;gap:4px}
+.sg-opt.best{border-color:#16a34a;box-shadow:0 0 0 1px #16a34a inset}
+.sg-rooms{display:flex;flex-wrap:wrap;gap:3px}
+.room-free{display:inline-block;font-size:10.5px;padding:1px 6px;border-radius:10px;border:1px solid #cbd5e1;background:#f8fafc;margin:1px}
+.room-free.is-empty{background:#dcfce7;border-color:#86efac;color:#166534}
+.room-free.is-best{background:#16a34a;border-color:#15803d;color:#fff}
 </style>
 </head>
 <body>
@@ -756,6 +771,7 @@ tr:hover{background:#f8fafc}
         <button class="btn ghost" onclick="clearSummaryReportDates()">Clear Dates</button>
       </div>
     </div>
+    <div id="reportDatePicker" class="card" style="margin:0 0 10px;padding:10px 12px;border:1.5px solid #93c5fd;background:#f8fbff"></div>
     <div class="row">
       <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600" title="How the seating Excel reports are split into worksheets">📑 Excel sheets:
           <select class="seatingExcelLayoutSel" onchange="setSeatingExcelLayout(this.value)">
@@ -3045,6 +3061,151 @@ function xlsxExamLoad(){
   [...new Set(rows.map(r=>r.date))].sort().forEach(d=>{ sheets[sheetDateLabel(d)]=rows.filter(r=>r.date===d).flatMap(flat); });
   xlsxDownload(sheets,'students-many-exams-per-day.xlsx');
 }
+/* ================= WHERE TO PLACE + EMPTY CLASSES ================= */
+// Room usage in one session: [{room, used, cap, free}], active rooms only.
+function roomUsageInSession(sessId){
+  const used=new Map();
+  (state.seating||[]).forEach(x=>{ if(x.sessionId===sessId) used.set(x.roomId,(used.get(x.roomId)||0)+1); });
+  return state.rooms.filter(r=>r.active!==false).map(r=>{ const cap=Math.max(0,(r.rows||0)*(r.cols||0)); const u=used.get(r.id)||0; return {room:r, used:u, cap, free:Math.max(0,cap-u)}; });
+}
+// Everything still waiting for a seat, grouped by course:
+//   • "held" papers (same-time clash -- must go to another time)
+//   • students sitting in the Student / Course Park
+function waitingGroups(){
+  const g=new Map();
+  const add=(courseId,studentId,fromSessionId,kind)=>{
+    if(!g.has(courseId)) g.set(courseId,{courseId,entries:[],kinds:new Set()});
+    const grp=g.get(courseId);
+    if(grp.entries.some(e=>e.studentId===studentId)) return;
+    grp.entries.push({studentId,courseId,fromSessionId,kind}); grp.kinds.add(kind);
+  };
+  const seated=new Set((state.seating||[]).map(x=>x.sessionId+'|'+x.studentId+'|'+x.courseId));
+  (state.heldClashEntries||[]).forEach(k=>{
+    if(seated.has(k)) return;
+    const [sess,sid,...rest]=k.split('|'); const cid=rest.join('|');
+    if(isMovedAway(sid,cid,sess)) return;
+    add(cid,sid,sess,'clash');
+  });
+  (state.parkedStudents||[]).forEach(p=>add(p.courseId,p.studentId,p.sessionId,'park'));
+  return [...g.values()].sort((a,b)=>b.entries.length-a.entries.length);
+}
+// Best sessions for a whole group: nobody in it may have an exam at that
+// time; prefer days where these students have the fewest exams, then the
+// original date, then most free seats. Returns top `limit`.
+function suggestSessionsForGroup(grp, limit){
+  const ids=grp.entries.map(e=>e.studentId);
+  const examsOnDay=new Map(); // date -> total exams of these students that day
+  ids.forEach(sid=>{
+    const st=state.students.find(x=>x.id===sid); if(!st) return;
+    (st.courseIds||[]).forEach(cid=>{ if(cid===grp.courseId) return; const s=effectiveSessionFor(sid,cid); if(s) examsOnDay.set(s.date,(examsOnDay.get(s.date)||0)+1); });
+  });
+  const origDates=new Set(grp.entries.map(e=>state.sessions.find(s=>s.id===e.fromSessionId)?.date).filter(Boolean));
+  const out=[];
+  [...state.sessions].sort((a,b)=>(a.date||'').localeCompare(b.date||'')||(a.startTime||'').localeCompare(b.startTime||'')).forEach(sess=>{
+    const blocked=grp.entries.filter(e=>{
+      if(e.kind==='clash' && sessionsOverlap(sess, state.sessions.find(s=>s.id===e.fromSessionId))) return true;
+      return timeClashesFor(e.studentId,e.courseId,sess.id).length>0;
+    }).length;
+    if(blocked) return;
+    const rooms=roomUsageInSession(sess.id);
+    const free=rooms.reduce((n,r)=>n+r.free,0);
+    if(free<grp.entries.length) return;
+    out.push({sess, free, empty:rooms.filter(r=>r.used===0&&r.cap>0), partial:rooms.filter(r=>r.used>0&&r.free>0).sort((a,b)=>b.free-a.free),
+      load:(examsOnDay.get(sess.date)||0)/Math.max(1,ids.length), sameDay:origDates.has(sess.date), hasExams:sessionCourseIdsFor(sess.id).length>0,
+      own:grp.entries.every(e=>e.kind==='park' && e.fromSessionId===sess.id && !isMovedAway(e.studentId,e.courseId,sess.id) && state.scheduled.some(sc=>sc.sessionId===sess.id&&sc.courseId===e.courseId))});
+  });
+  out.sort((a,b)=>(b.own?1:0)-(a.own?1:0) || a.load-b.load || (b.hasExams?1:0)-(a.hasExams?1:0) || (a.sameDay?0:1)-(b.sameDay?0:1) || b.free-a.free);
+  return out.slice(0,limit||4);
+}
+// Room to start seating a waiting group in: same kind (Lab / non-Lab) as the
+// paper, a room already in use with enough free seats first (no extra room
+// to open and invigilate), else the smallest empty room that holds them all.
+function bestRoomForGroup(course, n, o){
+  const lab=!!(course&&course.isLab);
+  const kind=r=>!!r.room.isLab===lab;
+  const part=o.partial.filter(kind), emp=o.empty.filter(kind);
+  return part.filter(r=>r.free>=n).sort((a,b)=>a.free-b.free)[0]
+      || emp.filter(r=>r.cap>=n).sort((a,b)=>a.cap-b.cap)[0]
+      || [...part,...emp].sort((a,b)=>b.free-a.free)[0]
+      || [...o.partial,...o.empty].sort((a,b)=>b.free-a.free)[0];
+}
+let _suggestOpen=true;
+function placementSuggestionsHTML(){
+  const groups=waitingGroups();
+  if(!groups.length) return '';
+  const totalStu=groups.reduce((n,g)=>n+g.entries.length,0);
+  const roomChip=r=>`<span class="room-free ${r.used?'':'is-empty'}" title="${esc(r.room.name)}: ${r.used} seated, ${r.free} free of ${r.cap}">${esc(r.room.name)} <b>${r.free}</b>${r.used?'':' (empty)'}</span>`;
+  return `<details class="card suggest-card" ${_suggestOpen?'open':''} ontoggle="_suggestOpen=this.open">
+    <summary><b>🧭 Where can I place them?</b> <span class="badge" style="background:#e0f2fe;color:#075985">${totalStu} student${totalStu===1?'':'s'} waiting in ${groups.length} course${groups.length===1?'':'s'}</span>
+      <span class="desc">Clash papers and parked students: the sessions below are times when <b>none</b> of the listed students has another exam, with the empty and free classrooms in each.</span></summary>
+    ${groups.slice(0,40).map(grp=>{
+      const c=state.courses.find(x=>x.id===grp.courseId);
+      const sugg=suggestSessionsForGroup(grp,4);
+      const names=grp.entries.slice(0,6).map(e=>{ const st=state.students.find(x=>x.id===e.studentId); return esc(st?st.name:e.studentId); }).join(', ')+(grp.entries.length>6?` +${grp.entries.length-6} more`:'');
+      return `<div class="suggest-row">
+        <div class="sg-head"><b>${esc(c?c.code:grp.courseId)}</b>${c&&c.title&&c.title!==c.code?' — '+esc(c.title):''}${c&&c.section?' ('+esc(c.section)+')':''}${c&&c.faculty?' · 👤 '+esc(c.faculty):''}
+          · <span class="badge red">${grp.entries.length} waiting</span> ${grp.kinds.has('clash')?'<span class="badge" style="background:#fee2e2;color:#991b1b">same-time clash</span>':''}${grp.kinds.has('park')?'<span class="badge" style="background:#ede9fe;color:#6d28d9">in park</span>':''}
+          <div class="desc" style="margin-top:2px">${names}</div></div>
+        ${sugg.length ? `<div class="sg-opts">${sugg.map((o,i)=>{
+          const bestRoom=bestRoomForGroup(c, grp.entries.length, o);
+          return `<div class="sg-opt ${i===0?'best':''}">
+            <div><b>${i===0?'⭐ ':''}${esc(o.sess.label)}</b> · ${esc(o.sess.day||dayName(o.sess.date))} ${esc(reportDMY(o.sess.date))} · ${esc(o.sess.startTime)}-${esc(o.sess.endTime)}</div>
+            <div class="desc">${o.own?'<b style="color:#15803d">✓ their scheduled session (timetable unchanged)</b> · ':''}${o.free} free seats · ${o.empty.length} empty class${o.empty.length===1?'':'es'}${o.sameDay&&!o.own?' · same day':''}${o.hasExams?'':' · no exams yet in this slot'}${o.load?` · these students avg ${o.load.toFixed(1)} other exam(s) that day`:' · no other exam that day'}</div>
+            <div class="sg-rooms">${(()=>{ const lab=!!(c&&c.isLab); const k=r=>!!r.room.isLab===lab; const list=[...(bestRoom?[bestRoom]:[]), ...o.partial.filter(k), ...o.empty.filter(k)].filter((r,ix,arr)=>arr.findIndex(z=>z.room.id===r.room.id)===ix).slice(0,8); return list.map((r,ix)=>ix===0&&bestRoom?roomChip(r).replace('class="room-free','class="room-free is-best'):roomChip(r)).join('') + (o.empty.filter(k).length+o.partial.filter(k).length>8?`<span class="desc">+${o.empty.filter(k).length+o.partial.filter(k).length-8} more</span>`:''); })()}</div>
+            <button class="btn sm green" onclick="placeWaitingGroup('${esc(grp.courseId)}','${esc(o.sess.id)}','${esc(bestRoom?bestRoom.room.id:'')}')" title="Seat all ${grp.entries.length} here (best room: ${esc(bestRoom?bestRoom.room.name:'')})">🪑 Place all ${grp.entries.length} here${bestRoom?' → '+esc(bestRoom.room.name):''}</button>
+          </div>`; }).join('')}</div>`
+        : `<div class="desc" style="color:#b91c1c">⛔ No session has a free time for all ${grp.entries.length} of these students together -- place them one by one (drag), or add a session / room.</div>`}
+      </div>`;
+    }).join('')}
+    ${groups.length>40?`<div class="desc">Showing the 40 largest of ${groups.length} courses.</div>`:''}
+  </details>`;
+}
+// Seat a whole waiting group in sessId, starting in roomId (overflow goes to
+// the next best rooms with the usual one-column-gap rule). Same-time rule is
+// re-checked per student; anyone blocked stays where they were.
+function placeWaitingGroup(courseId, sessId, roomId){
+  const grp=waitingGroups().find(g=>g.courseId===courseId); if(!grp){ toast('Nothing waiting for that course any more','warn'); return; }
+  const sess=state.sessions.find(s=>s.id===sessId); if(!sess) return;
+  const ok=[], blocked=[];
+  grp.entries.forEach(e=>{
+    const sameTimeAsHeld = e.kind==='clash' && sessionsOverlap(sess, state.sessions.find(s=>s.id===e.fromSessionId));
+    if(sameTimeAsHeld || timeClashesFor(e.studentId,e.courseId,sessId).length) blocked.push(e); else ok.push(e);
+  });
+  if(!ok.length){ toast('⛔ None of them can sit at that time','err'); return; }
+  ok.forEach(e=>{
+    if(e.fromSessionId!==sessId || e.kind==='clash') setStudentSession(e.studentId,e.courseId,sessId);
+    addStudentToPark(sessId,e.studentId,e.courseId);
+  });
+  const entries=ok.map(e=>({sessionId:sessId,studentId:e.studentId,courseId:e.courseId}));
+  const target = roomId || (bestRoomForGroup(state.courses.find(c=>c.id===courseId), ok.length, {partial:roomUsageInSession(sessId).filter(r=>r.used>0&&r.free>0), empty:roomUsageInSession(sessId).filter(r=>r.used===0&&r.cap>0)})||{}).room?.id;
+  const res=smartSeatEntries(sessId, entries, target, 1);
+  const placedKeys=new Set(entries.filter(e=>!res.left.some(l=>l.studentId===e.studentId)).map(e=>sessId+'|'+e.studentId+'|'+e.courseId));
+  state.heldClashEntries=(state.heldClashEntries||[]).filter(k=>{ const [,sid,...r]=k.split('|'); return !(r.join('|')===courseId && ok.some(e=>e.studentId===sid)); });
+  save(); renderSeating();
+  const c=state.courses.find(x=>x.id===courseId);
+  reportSmartSeat(res, `${c?c.code:courseId} → ${sess.label} ${reportDMY(sess.date)}`);
+  if(blocked.length) setTimeout(()=>toast(`${blocked.length} student(s) left waiting -- they have another exam at that time`,'warn'),1200);
+}
+let _emptyOpen=false;
+function emptyClassesHTML(sessList){
+  const list=(sessList||[]).length?sessList:[...state.sessions];
+  if(!list.length) return '';
+  const rows=list.map(sess=>{
+    const u=roomUsageInSession(sess.id);
+    const empty=u.filter(r=>r.used===0&&r.cap>0), part=u.filter(r=>r.used>0&&r.free>0).sort((a,b)=>b.free-a.free);
+    return {sess, empty, part, free:u.reduce((n,r)=>n+r.free,0), cap:u.reduce((n,r)=>n+r.cap,0)};
+  });
+  const totalEmpty=rows.reduce((n,r)=>n+r.empty.length,0);
+  return `<details class="card empty-card" ${_emptyOpen?'open':''} ontoggle="_emptyOpen=this.open">
+    <summary><b>🏫 Empty classes</b> <span class="badge" style="background:#dcfce7;color:#166534">${totalEmpty} empty room-slot${totalEmpty===1?'':'s'} across ${rows.length} session${rows.length===1?'':'s'}</span> <span class="desc">Follows the date / session filter above. Click to show.</span></summary>
+    <div style="overflow:auto;margin-top:8px"><table><thead><tr><th>Session</th><th>Free seats</th><th>Empty classes (capacity)</th><th>Classes with free seats (free / total)</th></tr></thead><tbody>
+    ${rows.map(r=>`<tr><td><b>${esc(r.sess.label)}</b><br>${esc(r.sess.day||dayName(r.sess.date))} ${esc(reportDMY(r.sess.date))}<br>${esc(r.sess.startTime)}-${esc(r.sess.endTime)}</td>
+      <td style="text-align:center"><b>${r.free}</b> / ${r.cap}</td>
+      <td>${r.empty.map(x=>`<span class="room-free is-empty">${esc(x.room.name)} <b>${x.cap}</b>${x.room.isLab?' 🧪':''}</span>`).join('')||'<span class="desc">none</span>'}</td>
+      <td>${r.part.map(x=>`<span class="room-free">${esc(x.room.name)} <b>${x.free}</b>/${x.cap}</span>`).join('')||'<span class="desc">none</span>'}</td></tr>`).join('')}
+    </tbody></table></div>
+  </details>`;
+}
 function seatFilter(){ if(!state.seatFilter||typeof state.seatFilter!=='object') state.seatFilter={date:'',period:'',course:'',hideEmpty:false}; return state.seatFilter; }
 function setSeatFilter(k,v){ seatFilter()[k]=v; renderSeating(); }
 function clearSeatFilter(){ state.seatFilter={date:'',period:'',course:'',hideEmpty:false}; renderSeating(); }
@@ -3229,7 +3390,7 @@ function renderSeating(){
     <div class="sess-jump">${shownSess.map(sess=>{ const n=state.seating.filter(x=>x.sessionId===sess.id).length; return `<a href="#seatSess_${esc(sess.id)}" class="sess-chip p${sessionPeriodIndex(sess)}" onclick="event.preventDefault();document.getElementById('seatSess_${esc(sess.id)}')?.scrollIntoView({behavior:'smooth',block:'start'})"><b>${esc(sessTitle(sess))}</b><br>${esc(sess.day||dayName(sess.date))} ${esc(reportDMY(sess.date))} · ${esc(sess.startTime)}-${esc(sess.endTime)} · ${n} seated</a>`; }).join('') || '<span class="desc">No session matches these filters.</span>'}</div>
   </div>`;
 
-  v.innerHTML = filterBar + clashPanel + shownSess.map(sess => {
+  v.innerHTML = filterBar + clashPanel + placementSuggestionsHTML() + emptyClassesHTML(shownSess) + shownSess.map(sess => {
     const ss = state.seating.filter(s=>s.sessionId===sess.id);
     const parkedForSession = (state.parkedStudents||[]).filter(p=>p.sessionId===sess.id);
     const hasScheduledExam = sessionCourseIdsFor(sess.id).length>0;
@@ -6407,7 +6568,7 @@ const TAB_RENDERERS = {
   students:     [renderCourses, renderStudents, updateStats],
   attendance:   [renderShortAttendance],
   docrequired:  [renderDocRequired],
-  exports:      [()=>{ const el=document.getElementById('noticeBoardLayout'); if(el) el.value=state.noticeBoardLayout||'newpage'; const o=document.getElementById('noticeBoardOrder'); if(o) o.value=state.noticeBoardOrder||'date'; const at=document.getElementById('attendanceOrder'); if(at) at.value=state.attendanceOrder||'date'; }],
+  exports:      [renderReportDatePicker, ()=>{ const el=document.getElementById('noticeBoardLayout'); if(el) el.value=state.noticeBoardLayout||'newpage'; const o=document.getElementById('noticeBoardOrder'); if(o) o.value=state.noticeBoardOrder||'date'; const at=document.getElementById('attendanceOrder'); if(at) at.value=state.attendanceOrder||'date'; }],
   deptsummary:  [renderDepartmentSummary],
   invigilation: [renderInvigilation]
 };
@@ -6507,8 +6668,41 @@ function reportSeating(){
   setTimeout(()=>{ _reportSeatCache=null; },0); // cache only within one export
   return out;
 }
+/* ===== Report date picker =====
+   state.reportDates = [] means every exam date; otherwise only the ticked
+   dates go into the Seating Plan, Notice Board, Attendance Sheets and the
+   Course / Faculty / Department summaries (PDF and Excel). */
+function noReportDataMsg(){ return (Array.isArray(state.reportDates)&&state.reportDates.length) ? 'No seating data on the selected report dates -- tick other dates under 📅 Report dates' : 'No seating data yet -- run Generate Seating first'; }
+function reportDateList(){ return [...new Set(state.sessions.filter(s=>sessionCourseIdsFor(s.id).length).map(s=>s.date).filter(Boolean))].sort(); }
+function reportDateAllowed(d){ const sel=Array.isArray(state.reportDates)?state.reportDates:[]; return !sel.length || sel.includes(d); }
+function toggleReportDate(d, on){
+  const all=reportDateList();
+  let sel=Array.isArray(state.reportDates)&&state.reportDates.length ? [...state.reportDates] : [];
+  if(d==='__ALL__'){ sel=[]; }
+  else if(d==='__NONE__'){ sel=['__none__']; }
+  else {
+    if(!sel.length || sel[0]==='__none__') sel = sel[0]==='__none__' ? [] : [...all];
+    if(on){ if(!sel.includes(d)) sel.push(d); } else sel=sel.filter(x=>x!==d);
+    if(sel.length===all.length) sel=[];        // everything ticked = "all dates"
+    if(!sel.length && !on) sel=['__none__'];
+  }
+  state.reportDates=sel; save(); renderReportDatePicker();
+}
+function renderReportDatePicker(){
+  const el=document.getElementById('reportDatePicker'); if(!el) return;
+  const all=reportDateList(); const sel=Array.isArray(state.reportDates)?state.reportDates:[];
+  const isOn=d=>!sel.length || sel.includes(d);
+  const n=sel.length?all.filter(d=>sel.includes(d)).length:all.length;
+  el.innerHTML = all.length ? `<div class="row" style="gap:6px;align-items:center;flex-wrap:wrap">
+      <b style="font-size:12px">📅 Report dates:</b>
+      <button class="btn sm ${!sel.length?'':'ghost'}" onclick="toggleReportDate('__ALL__')">All dates</button>
+      ${all.map(d=>`<label class="rdate ${isOn(d)?'on':''}"><input type="checkbox" ${isOn(d)?'checked':''} onchange="toggleReportDate('${esc(d)}',this.checked)"> ${esc(dayName(d).slice(0,3))} ${esc(reportDMY(d))}</label>`).join('')}
+      <button class="btn sm ghost" onclick="toggleReportDate('__NONE__')">Clear</button>
+      <span class="desc">${n} of ${all.length} date(s) selected — applies to every report button below (PDF and Excel)</span>
+    </div>` : '<span class="desc">📅 Report dates: schedule exams first.</span>';
+}
 function buildSeatingPlanBlocks(){
-  const sessionsSorted = [...state.sessions].sort((a,b)=> (a.date||'').localeCompare(b.date||'') || (a.startTime||'').localeCompare(b.startTime||''));
+  const sessionsSorted = [...state.sessions].filter(s=>reportDateAllowed(s.date)).sort((a,b)=> (a.date||'').localeCompare(b.date||'') || (a.startTime||'').localeCompare(b.startTime||''));
   const {romanMap, orderMap} = sessionOrderMaps();
   const blocks = [];
   sessionsSorted.forEach(sess=>{
@@ -6558,7 +6752,7 @@ function noticeBoardBlocks(){
 }
 async function xlsxCourseWiseSeating(){
   const blocks=buildSeatingPlanBlocks();
-  if(!blocks.length){toast('No seating data yet -- run Generate Seating first','warn');return;}
+  if(!blocks.length){toast(noReportDataMsg(),'warn');return;}
   if(typeof ExcelJS==='undefined'){toast('Excel export library is not available. Please reload the app.','err');return;}
   const wb=new ExcelJS.Workbook();
   wb.creator='DHA Suffa University';
@@ -6654,7 +6848,7 @@ async function xlsxCourseWiseSeating(){
 
 function pdfCourseWiseSeating(){
   const blocks = buildSeatingPlanBlocks();
-  if(!blocks.length){ toast('No seating data yet -- run Generate Seating first','warn'); return; }
+  if(!blocks.length){ toast(noReportDataMsg(),'warn'); return; }
 
   const doc = new jsPDF({unit:'pt',format:'a4'});
   const pw = doc.internal.pageSize.getWidth();
@@ -6811,7 +7005,7 @@ function reportExcelFooter(ws,leftText,title){
 
 function pdfNoticeBoard(){
   const blocks=noticeBoardSortedBlocks();
-  if(!blocks.length){toast('No seating data yet -- run Generate Seating first','warn');return;}
+  if(!blocks.length){toast(noReportDataMsg(),'warn');return;}
   const doc=new jsPDF({unit:'pt',format:'a4',orientation:'portrait'});
   const pw=doc.internal.pageSize.getWidth();
   const ph=doc.internal.pageSize.getHeight();
@@ -6876,7 +7070,7 @@ function pdfNoticeBoard(){
 
 async function xlsxNoticeBoard(){
   const blocks=noticeBoardSortedBlocks();
-  if(!blocks.length){toast('No seating data yet -- run Generate Seating first','warn');return;}
+  if(!blocks.length){toast(noReportDataMsg(),'warn');return;}
   if(typeof ExcelJS==='undefined'){toast('Excel export library is not available. Please reload the app.','err');return;}
   const wb=new ExcelJS.Workbook();
   wb.creator='DHA Suffa University'; wb.subject='DSU Notice Board'; wb.title='DSU Notice Board';
@@ -6940,6 +7134,7 @@ async function xlsxNoticeBoard(){
   reportExcelFooter(idx,'','Notice Board Index');
   idx.headerFooter={oddFooter:'&L&"Times New Roman,Regular"&9Notice Board Index&R&"Times New Roman,Bold"&9Page &P of &N'};
   idx.pageSetup.printTitlesRow='2:2';
+  idx.pageSetup.fitToPage=true; idx.pageSetup.fitToWidth=1; idx.pageSetup.fitToHeight=0; // index has no manual breaks
 
   const buf=await wb.xlsx.writeBuffer();
   const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
@@ -7044,6 +7239,7 @@ function summarySelectedDates(){
 }
 function summaryDateAllowed(date){
   const d=String(date||''); const f=summarySelectedDates();
+  if(!reportDateAllowed(d)) return false;
   if(f.exact) return d===f.exact;
   if(f.from && d<f.from) return false;
   if(f.to && d>f.to) return false;
@@ -7499,7 +7695,7 @@ function attendanceBlocks(){
 }
 function pdfAttendanceSheets(){
   const blocks=attendanceSortedBlocks();
-  if(!blocks.length){toast('No seating data yet -- run Generate Seating first','warn');return;}
+  if(!blocks.length){toast(noReportDataMsg(),'warn');return;}
   const doc=new jsPDF({unit:'pt',format:'a4',orientation:'portrait'});
   const pw=doc.internal.pageSize.getWidth(), ph=doc.internal.pageSize.getHeight();
   const left=34, right=34, contentW=pw-left-right;
@@ -7509,15 +7705,22 @@ function pdfAttendanceSheets(){
   function setFont(size,bold=false){ doc.setFont('times',bold?'bold':'normal'); doc.setFontSize(size); doc.setTextColor(...black); }
   function center(text,y,size=14,bold=false){ setFont(size,bold); doc.text(String(text??''),pw/2,y,{align:'center'}); }
 
+  // ONE PAGE PER SHEET: every room/course attendance sheet is laid out to fit
+  // a single A4 page. Rows, fonts and spacing shrink as the room gets fuller
+  // (compact layout for bigger rooms) instead of spilling onto a 2nd page.
+  const pageBottom=ph-34;              // footer line sits below this
+  const colW={0:35,1:65,2:126,3:84,4:50,5:151};
   blocks.forEach((b,bi)=>{
     if(bi) doc.addPage();
     const startPage=doc.getNumberOfPages();
-    let y=28;
+    const n=b.rows.length;
+    const compact=(n+1)*16 > 430;      // normal layout leaves ~430pt for the table
+    let y=compact?22:28;
 
-    center(state.uniName||'DHA SUFFA UNIVERSITY',y+12,18,true); y+=34;
-    center(reportExamTitle(),y,14,true); y+=22;
-    center(`ATTENDANCE SHEET ROOM # ${b.roomName||'--'}`,y,15,false); y+=21;
-    center(b.classLabel||'',y,16,true); y+=20;
+    center(state.uniName||'DHA SUFFA UNIVERSITY',y+12,compact?15:18,true); y+=compact?26:34;
+    center(reportExamTitle(),y,compact?12:14,true); y+=compact?17:22;
+    center(`ATTENDANCE SHEET ROOM # ${b.roomName||'--'}`,y,compact?12.5:15,false); y+=compact?16:21;
+    center(b.classLabel||'',y,compact?13:16,true); y+=compact?13:20;
 
     // Metadata is deliberately rendered as a 2-column table. This prevents long
     // course/faculty names from colliding with Session/Time on the same baseline.
@@ -7529,51 +7732,75 @@ function pdfAttendanceSheets(){
     doc.autoTable({
       body:metaRows,
       startY:y,
-      margin:{left,right,bottom:40},
+      margin:{left,right,bottom:34},
       theme:'plain',
-      styles:{font:'times',fontSize:11.5,fontStyle:'bold',textColor:black,cellPadding:{top:2,right:4,bottom:3,left:4},valign:'middle',overflow:'linebreak'},
+      styles:{font:'times',fontSize:compact?10.2:11.5,fontStyle:'bold',textColor:black,cellPadding:{top:compact?1:2,right:4,bottom:compact?1.5:3,left:4},valign:'middle',overflow:'linebreak'},
       columnStyles:{0:{cellWidth:contentW*0.58,halign:'left'},1:{cellWidth:contentW*0.42,halign:'left'}},
-      didParseCell:data=>{ data.cell.styles.minCellHeight=18; }
+      didParseCell:data=>{ data.cell.styles.minCellHeight=compact?14:18; }
     });
-    y=doc.lastAutoTable.finalY+8;
+    y=doc.lastAutoTable.finalY+(compact?5:8);
 
+    // Space left for the student table once the script-count table and the
+    // invigilator block are reserved at the bottom of this same page.
+    const bottomBlock=compact?126:184;
+    const avail=pageBottom-y-bottomBlock;
+    // Pick the largest font whose rows (including names that wrap) fit.
+    const rowMin=Math.max(9, Math.min(18, avail/(n+1.2)));
+    let font=9.2, pad=3;
+    for(let f=9.2; f>=5.6; f-=0.2){
+      doc.setFont('times','normal'); doc.setFontSize(f);
+      const lh=f*1.15, pv=Math.max(0.6, Math.min(3,(rowMin-lh)/2));
+      let total=Math.max(rowMin, Math.min(10,f+0.8)*1.15+2*pv);
+      b.rows.forEach(r=>{
+        const lines=Math.max(doc.splitTextToSize(String(r.name||''),colW[2]-6).length, doc.splitTextToSize(String(r.seat||''),colW[3]-6).length);
+        total+=Math.max(rowMin, lines*lh+2*pv);
+      });
+      font=f; pad=pv;
+      if(total<=avail) break;
+    }
     const head=['S.No.','Reg No.','Name','Seating Plan','Copy No.','Signature / Remarks'];
     const data=b.rows.map(r=>[r.sno,r.reg,r.name,r.seat,'','']);
     doc.autoTable({
       head:[head], body:data, startY:y,
-      margin:{left,right,bottom:40},
+      margin:{left,right,bottom:34},
       theme:'grid',
-      styles:{font:'times',fontSize:9.2,cellPadding:{top:3,right:3,bottom:3,left:3},textColor:black,lineColor:black,lineWidth:.5,halign:'center',valign:'middle',overflow:'linebreak',minCellHeight:18},
-      headStyles:{font:'times',fontStyle:'bold',fontSize:10,fillColor:[255,255,255],textColor:black,lineColor:black,lineWidth:.7,halign:'center',valign:'middle'},
-      columnStyles:{0:{cellWidth:35},1:{cellWidth:65},2:{cellWidth:126,halign:'left'},3:{cellWidth:84},4:{cellWidth:50},5:{cellWidth:151,halign:'left'}},
+      styles:{font:'times',fontSize:font,cellPadding:{top:pad,right:3,bottom:pad,left:3},textColor:black,lineColor:black,lineWidth:.5,halign:'center',valign:'middle',overflow:'linebreak',minCellHeight:rowMin},
+      headStyles:{font:'times',fontStyle:'bold',fontSize:Math.min(10,font+0.8),fillColor:[255,255,255],textColor:black,lineColor:black,lineWidth:.7,halign:'center',valign:'middle'},
+      columnStyles:{0:{cellWidth:colW[0]},1:{cellWidth:colW[1]},2:{cellWidth:colW[2],halign:'left'},3:{cellWidth:colW[3]},4:{cellWidth:colW[4]},5:{cellWidth:colW[5],halign:'left'}},
       rowPageBreak:'avoid',
       showHead:'everyPage'
     });
-    y=doc.lastAutoTable.finalY+12;
+    y=doc.lastAutoTable.finalY+(compact?6:12);
 
     // Script-count section, matching the DSU attendance-sheet terminology.
-    if(y+65>ph-40){doc.addPage();y=40;}
+    // Safety net only (a room bigger than ~70 seats): never draw past the footer.
+    if(y+bottomBlock-(compact?6:12)>pageBottom+1){ doc.addPage(); y=40; }
     doc.autoTable({
       head:[['Class','Total Student','No.of Subj.Scripts','','No.of Obj.Scripts','Total']],
       body:[[b.classLabel||'',b.rows.length,'','','','']],
-      startY:y, margin:{left,right,bottom:40}, theme:'grid',
-      styles:{font:'times',fontSize:9,cellPadding:3,textColor:black,lineColor:black,lineWidth:.5,halign:'center',valign:'middle',overflow:'linebreak'},
-      headStyles:{font:'times',fontStyle:'bold',fontSize:9,fillColor:[255,255,255],textColor:black,lineColor:black,lineWidth:.5},
+      startY:y, margin:{left,right,bottom:34}, theme:'grid',
+      styles:{font:'times',fontSize:compact?8.5:9,cellPadding:compact?2:3,textColor:black,lineColor:black,lineWidth:.5,halign:'center',valign:'middle',overflow:'linebreak'},
+      headStyles:{font:'times',fontStyle:'bold',fontSize:compact?8.5:9,fillColor:[255,255,255],textColor:black,lineColor:black,lineWidth:.5},
       columnStyles:{0:{cellWidth:72},1:{cellWidth:82},2:{cellWidth:88},3:{cellWidth:18},4:{cellWidth:88},5:{cellWidth:72}}
     });
-    y=doc.lastAutoTable.finalY+18;
+    y=doc.lastAutoTable.finalY+(compact?13:18);
 
-    if(y+145>ph-40){doc.addPage();y=42;}
-    setFont(11.5,true);
+    const fs=compact?10.5:11.5;
+    setFont(fs,true);
     doc.text('Name of Invigilator(s):',left,y);
     doc.text('Signature of Invigilator(s)',pw/2+8,y);
-    y+=22; setFont(11.5,false);
+    y+=compact?16:22; setFont(fs,false);
     doc.text('1. _____________',left,y); doc.text('1. _____________',pw/2+8,y);
-    y+=21; doc.text('2. _____________',left,y); doc.text('2. _____________',pw/2+8,y);
-    y+=30;
-    doc.text('Name of Person Receiving: ________________________',left,y);
-    y+=22; doc.text('Signature of Person Receiving: _____________________',left,y);
-    y+=22; doc.text('Date: ________________',left,y);
+    y+=compact?16:21; doc.text('2. _____________',left,y); doc.text('2. _____________',pw/2+8,y);
+    if(compact){
+      y+=20; doc.text('Name of Person Receiving: ____________________',left,y); doc.text('Date: ________________',pw/2+8,y);
+      y+=17; doc.text('Signature of Person Receiving: _________________',left,y);
+    }else{
+      y+=30;
+      doc.text('Name of Person Receiving: ________________________',left,y);
+      y+=22; doc.text('Signature of Person Receiving: _____________________',left,y);
+      y+=22; doc.text('Date: ________________',left,y);
+    }
     reportTrackPages(pageMeta,startPage,doc.getNumberOfPages(),attGroupOf(b));
   });
   reportStampPageFooters(doc,pageMeta);
@@ -7588,7 +7815,7 @@ function pdfAttendanceSheets(){
    "Page &P of &N". An Index sheet lists every date / room / course. */
 async function xlsxAttendanceSheets(){
   const blocks=attendanceSortedBlocks();
-  if(!blocks.length){toast('No seating data yet -- run Generate Seating first','warn');return;}
+  if(!blocks.length){toast(noReportDataMsg(),'warn');return;}
   if(typeof ExcelJS==='undefined'){toast('Excel export library is not available. Please reload the app.','err');return;}
   const wb=new ExcelJS.Workbook();
   wb.creator='DHA Suffa University';
@@ -7624,34 +7851,49 @@ async function xlsxAttendanceSheets(){
     [1,10,13,38,17,16,38].forEach((w,i)=>ws.getColumn(i+1).width=w);
     ws.views=[{showGridLines:false}];
     reportExcelFooter(ws,g.label,`Attendance Sheets — ${attOrder()==='room'?'Room-wise':'Date-wise'}`);
+    ws.pageSetup.scale=64; // whole B:G width + one full sheet per A4 page
     let r=1;
     g.blocks.forEach((b,bi)=>{
       if(bi){ ws.getRow(r-1).addPageBreak(); }
-      merge(ws,r,2,7,state.uniName||'DHA SUFFA UNIVERSITY',titleFont,center,27); r++;
-      merge(ws,r,2,7,reportExamTitle(),examFont,center,22); r++;
-      merge(ws,r,2,7,excelDepartmentHeaderLabel(),{name:'Times New Roman',size:13,bold:true},center,20); r++;
-      merge(ws,r,2,7,`ATTENDANCE SHEET ROOM # ${b.roomName||'--'}`,sectionFont,center,25); r++;
-      merge(ws,r,2,7,b.classLabel||'',sectionFont,center,25); r++;
-      ws.mergeCells(r,2,r,4); ws.getCell(r,2).value='Course Title:'; ws.getCell(r,2).font=labelFont; ws.getCell(r,2).alignment=leftAlign;
-      ws.mergeCells(r,5,r,6); ws.getCell(r,5).value=b.courseDisplay||b.courseTitle||''; ws.getCell(r,5).font=labelFont; ws.getCell(r,5).alignment=leftAlign;
-      ws.getCell(r,7).value=`Session: ${b.sessionText||''}`; ws.getCell(r,7).font=labelFont; ws.getCell(r,7).alignment=leftAlign; ws.getRow(r).height=30; r++;
-      ws.mergeCells(r,2,r,4); ws.getCell(r,2).value='Subject Teacher:'; ws.getCell(r,2).font=labelFont; ws.getCell(r,2).alignment=leftAlign;
-      ws.mergeCells(r,5,r,6); ws.getCell(r,5).value=b.faculty||''; ws.getCell(r,5).font=labelFont; ws.getCell(r,5).alignment=leftAlign;
-      ws.getCell(r,7).value=`Time: ${b.timeText||''}`; ws.getCell(r,7).font=labelFont; ws.getCell(r,7).alignment=leftAlign; ws.getRow(r).height=30; r++;
-      ws.mergeCells(r,2,r,4); ws.getCell(r,2).value=`Room No: ${b.roomName||'--'}`; ws.getCell(r,2).font=labelFont; ws.getCell(r,2).alignment=leftAlign;
-      ws.getCell(r,6).value='Date:'; ws.getCell(r,6).font=labelFont; ws.getCell(r,6).alignment=leftAlign; ws.getCell(r,7).value=reportDMY(b.dateText); ws.getCell(r,7).font=labelFont; ws.getCell(r,7).alignment=leftAlign; ws.getRow(r).height=24; r++;
-      ['S.No.','Reg No.','Name','Seating Plan','Copy No.','Signature / Remarks'].forEach((v,c)=>{const cell=ws.getCell(r,c+2);cell.value=v;cell.font=headFont;cell.alignment=center;cell.border=border;}); ws.getRow(r).height=26; r++;
-      b.rows.forEach(row=>{[row.sno,row.reg,row.name,row.seat,'',''].forEach((v,c)=>{const cell=ws.getCell(r,c+2);cell.value=v;cell.font=bodyFont;cell.alignment=c===2?leftAlign:center;cell.border=border;});ws.getRow(r).height=24;r++;});
-      r++;
-      ['Class','Total Student','No.of Subj.Scripts','','No.of Obj.Scripts','Total'].forEach((v,c)=>{const cell=ws.getCell(r,c+2);cell.value=v;cell.font=headFont;cell.alignment=center;cell.border=border;}); r++;
-      [b.classLabel||'',b.rows.length,'','','',''].forEach((v,c)=>{const cell=ws.getCell(r,c+2);cell.value=v;cell.font=bodyFont;cell.alignment=center;cell.border=border;}); r+=2;
-      ws.mergeCells(r,2,r,4); ws.getCell(r,2).value='Name of Invigilator(s):'; ws.getCell(r,2).font=labelFont; ws.getCell(r,2).alignment=leftAlign;
-      ws.mergeCells(r,5,r,7); ws.getCell(r,5).value='Signature of Invigilator(s)'; ws.getCell(r,5).font=labelFont; ws.getCell(r,5).alignment=leftAlign; r++;
-      merge(ws,r,2,4,'1. _____________',bodyFont,leftAlign,24); merge(ws,r,5,7,'1. _____________',bodyFont,leftAlign,24); r++;
-      merge(ws,r,2,4,'2. _____________',bodyFont,leftAlign,24); merge(ws,r,5,7,'2. _____________',bodyFont,leftAlign,24); r+=2;
-      merge(ws,r,2,7,'Name of Person Receiving: ________________________',bodyFont,leftAlign,24); r++;
-      merge(ws,r,2,7,'Signature of Person Receiving: _____________________',bodyFont,leftAlign,24); r++;
-      merge(ws,r,2,7,'Date: ________________',bodyFont,leftAlign,24); r++;
+      // ONE PAGE PER SHEET: the sheet prints at 64% on A4 portrait, which gives
+      // ~1200 points of row height per page. Fixed parts are squeezed and the
+      // student rows get whatever is left, so every block fits on one page.
+      const n=b.rows.length;
+      const compact=n>24;
+      const H=v=>Math.round(v*(compact?0.8:1));
+      const fixed=H(27)+H(22)+H(20)+H(25)+H(25)+H(30)+H(30)+H(24)+H(26) + 8 + H(20)*2 + 8 + H(20) + H(22)*2 + 8 + H(22)*3;
+      const rowH=Math.max(11.5, Math.min(24, Math.floor((1090-fixed)/Math.max(1,n))));
+      const fsz=rowH>=20?11:rowH>=16?10:rowH>=13.5?9:8;
+      const bodyF={name:'Times New Roman',size:fsz};
+      const lineF={name:'Times New Roman',size:compact?10:11};
+      merge(ws,r,2,7,state.uniName||'DHA SUFFA UNIVERSITY',{...titleFont,size:compact?15:18},center,H(27)); r++;
+      merge(ws,r,2,7,reportExamTitle(),{...examFont,size:compact?12:14},center,H(22)); r++;
+      merge(ws,r,2,7,excelDepartmentHeaderLabel(),{name:'Times New Roman',size:compact?11:13,bold:true},center,H(20)); r++;
+      merge(ws,r,2,7,`ATTENDANCE SHEET ROOM # ${b.roomName||'--'}`,{...sectionFont,size:compact?13:15},center,H(25)); r++;
+      merge(ws,r,2,7,b.classLabel||'',{...sectionFont,size:compact?13:15},center,H(25)); r++;
+      const lab={...labelFont,size:compact?11:12};
+      ws.mergeCells(r,2,r,4); ws.getCell(r,2).value='Course Title:'; ws.getCell(r,2).font=lab; ws.getCell(r,2).alignment=leftAlign;
+      ws.mergeCells(r,5,r,6); ws.getCell(r,5).value=b.courseDisplay||b.courseTitle||''; ws.getCell(r,5).font=lab; ws.getCell(r,5).alignment=leftAlign;
+      ws.getCell(r,7).value=`Session: ${b.sessionText||''}`; ws.getCell(r,7).font=lab; ws.getCell(r,7).alignment=leftAlign; ws.getRow(r).height=H(30); r++;
+      ws.mergeCells(r,2,r,4); ws.getCell(r,2).value='Subject Teacher:'; ws.getCell(r,2).font=lab; ws.getCell(r,2).alignment=leftAlign;
+      ws.mergeCells(r,5,r,6); ws.getCell(r,5).value=b.faculty||''; ws.getCell(r,5).font=lab; ws.getCell(r,5).alignment=leftAlign;
+      ws.getCell(r,7).value=`Time: ${b.timeText||''}`; ws.getCell(r,7).font=lab; ws.getCell(r,7).alignment=leftAlign; ws.getRow(r).height=H(30); r++;
+      ws.mergeCells(r,2,r,4); ws.getCell(r,2).value=`Room No: ${b.roomName||'--'}`; ws.getCell(r,2).font=lab; ws.getCell(r,2).alignment=leftAlign;
+      ws.getCell(r,6).value='Date:'; ws.getCell(r,6).font=lab; ws.getCell(r,6).alignment=leftAlign; ws.getCell(r,7).value=reportDMY(b.dateText); ws.getCell(r,7).font=lab; ws.getCell(r,7).alignment=leftAlign; ws.getRow(r).height=H(24); r++;
+      ['S.No.','Reg No.','Name','Seating Plan','Copy No.','Signature / Remarks'].forEach((v,c)=>{const cell=ws.getCell(r,c+2);cell.value=v;cell.font={...headFont,size:Math.min(11,fsz+1)};cell.alignment=center;cell.border=border;}); ws.getRow(r).height=H(26); r++;
+      b.rows.forEach(row=>{[row.sno,row.reg,row.name,row.seat,'',''].forEach((v,c)=>{const cell=ws.getCell(r,c+2);cell.value=v;cell.font=bodyF;cell.alignment=c===2?{horizontal:'left',vertical:'middle',wrapText:false,shrinkToFit:true}:center;cell.border=border;});ws.getRow(r).height=rowH;r++;});
+      ws.getRow(r).height=8; r++;
+      ['Class','Total Student','No.of Subj.Scripts','','No.of Obj.Scripts','Total'].forEach((v,c)=>{const cell=ws.getCell(r,c+2);cell.value=v;cell.font={...headFont,size:compact?10:11};cell.alignment=center;cell.border=border;}); ws.getRow(r).height=H(20); r++;
+      [b.classLabel||'',b.rows.length,'','','',''].forEach((v,c)=>{const cell=ws.getCell(r,c+2);cell.value=v;cell.font={name:'Times New Roman',size:compact?10:11};cell.alignment=center;cell.border=border;}); ws.getRow(r).height=H(20); r++;
+      ws.getRow(r).height=8; r++;
+      ws.mergeCells(r,2,r,4); ws.getCell(r,2).value='Name of Invigilator(s):'; ws.getCell(r,2).font=lab; ws.getCell(r,2).alignment=leftAlign;
+      ws.mergeCells(r,5,r,7); ws.getCell(r,5).value='Signature of Invigilator(s)'; ws.getCell(r,5).font=lab; ws.getCell(r,5).alignment=leftAlign; ws.getRow(r).height=H(20); r++;
+      merge(ws,r,2,4,'1. _____________',lineF,leftAlign,H(22)); merge(ws,r,5,7,'1. _____________',lineF,leftAlign,H(22)); r++;
+      merge(ws,r,2,4,'2. _____________',lineF,leftAlign,H(22)); merge(ws,r,5,7,'2. _____________',lineF,leftAlign,H(22)); r++;
+      ws.getRow(r).height=8; r++;
+      merge(ws,r,2,7,'Name of Person Receiving: ________________________',lineF,leftAlign,H(22)); r++;
+      merge(ws,r,2,7,'Signature of Person Receiving: _____________________',lineF,leftAlign,H(22)); r++;
+      merge(ws,r,2,7,'Date: ________________',lineF,leftAlign,H(22)); r++;
       [isno++,reportDMY(b.dateText),b.sessionText||'',b.roomName||'--',b.classLabel||'',b.courseDisplay||b.courseTitle||'',b.rows.length,sheetName].forEach((v,c)=>{const cell=idx.getCell(ir,c+1);cell.value=v;cell.font=bodyFont;cell.alignment=c===5?leftAlign:center;cell.border=border;});
       idx.getCell(ir,8).value={text:sheetName,hyperlink:`#'${sheetName.replace(/'/g,"''")}'!A1`}; idx.getCell(ir,8).font={name:'Times New Roman',size:11,color:{argb:'FF1D4ED8'},underline:true};
       ir++;
@@ -7661,6 +7903,7 @@ async function xlsxAttendanceSheets(){
   reportExcelFooter(idx,'','Attendance Sheets Index');
   idx.headerFooter={oddFooter:'&L&"Times New Roman,Regular"&9Attendance Sheets Index&R&"Times New Roman,Bold"&9Page &P of &N'};
   idx.pageSetup.printTitlesRow='2:2';
+  idx.pageSetup.fitToPage=true; idx.pageSetup.fitToWidth=1; idx.pageSetup.fitToHeight=0; // index has no manual breaks
 
   const buf=await wb.xlsx.writeBuffer();
   const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
@@ -8181,7 +8424,7 @@ function xlsxDaily(){
 // sessions on the same date no longer overwrite each other).
 async function xlsxSeatingGrid(){
   const seatsAll = reportSeating();
-  if(!seatsAll.length){ toast('No seating data yet -- run Generate Seating first','warn'); return; }
+  if(!seatsAll.length){ toast(noReportDataMsg(),'warn'); return; }
   if(typeof ExcelJS==='undefined'){ toast('Excel export library is not available. Please reload the app.','err'); return; }
   const wb=new ExcelJS.Workbook(); wb.creator='DHA Suffa University'; wb.title='Seating Plan (room grid)';
   const thin={style:'thin',color:{argb:'FF000000'}}, border={top:thin,left:thin,bottom:thin,right:thin};
@@ -8492,7 +8735,7 @@ function pdfSeating(){
       });
     }
   }
-  if(!page){ toast('No seating data yet -- run Generate Seating first','warn'); return; }
+  if(!page){ toast(noReportDataMsg(),'warn'); return; }
   doc.save('seating-plan-grid.pdf');
   toast(`Downloaded Seating Plan Grid PDF -- ${page} room/session page(s)`,'ok');
 }
