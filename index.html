@@ -278,6 +278,12 @@ tr:hover{background:#f8fafc}
 .room-free{display:inline-block;font-size:10.5px;padding:1px 6px;border-radius:10px;border:1px solid #cbd5e1;background:#f8fafc;margin:1px}
 .room-free.is-empty{background:#dcfce7;border-color:#86efac;color:#166534}
 .room-free.is-best{background:#16a34a;border-color:#15803d;color:#fff}
+.dup-enroll{margin-top:10px;border:1px solid #fcd34d;background:#fffbeb;border-radius:8px;padding:8px 10px}
+.dup-enroll summary{cursor:pointer;font-weight:600;color:#92400e;font-size:12.5px}
+.dup-card{border-left-color:#f59e0b !important;cursor:default}
+.dup-row{font-size:11px;padding:3px 6px;margin-top:3px;border-radius:6px;background:#fff;border:1px solid #fde68a;display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.dup-row.is-placed{border-color:#86efac;background:#f0fdf4}
+.dup-skip{font-size:10px;background:#fee2e2;color:#991b1b;border-radius:8px;padding:1px 6px}
 </style>
 </head>
 <body>
@@ -2150,10 +2156,29 @@ function computeHeldClashEntries(){
     while(stack.length){ const x=stack.pop(); if(done.has(x.id)) continue; done.add(x.id); slot.push(x); state.sessions.forEach(y=>{ if(!done.has(y.id)&&sessionsOverlap(x,y)) stack.push(y); }); }
     slots.push(slot);
   });
+  // ONE SEAT PER SUBJECT: a student enrolled in two sections / codes of the
+  // same subject (same course code or title, e.g. HU-1203 BS-SE-1A and 1B, or
+  // CS-3103 and CS-3301 "Artificial Intelligence") writes that subject once.
+  // Keep the best entry, the others are duplicates: never seated, never
+  // listed as clash / waiting.
+  const dup=new Set();
+  { const byStuPaper=new Map();
+    state.sessions.forEach(sess=>sessionCourseIdsFor(sess.id).forEach(cid=>studentsOfInSession(cid,sess.id).forEach(sid=>{
+      const k=`${sess.id}|${sid}|${cid}`; const key=sid+'|'+paperRootOf(cid);
+      if(!byStuPaper.has(key)) byStuPaper.set(key,[]);
+      byStuPaper.get(key).push({k,cid,prio: overrides.has(k)?0 : movedSessionOf(sid,cid)===sess.id?1 : parked.has(k)?2 : 3});
+    })));
+    byStuPaper.forEach(list=>{
+      if(list.length<2) return;
+      list.sort((a,b)=>a.prio-b.prio || ((courseById.get(b.cid)?.studentCount||0)-(courseById.get(a.cid)?.studentCount||0)) || String(courseById.get(a.cid)?.code||'').localeCompare(String(courseById.get(b.cid)?.code||'')));
+      list.slice(1).forEach(e=>{ dup.add(e.k); held.add(e.k); });
+    });
+  }
+  state.heldDuplicateEntries=[...dup];
   slots.forEach(slot=>{
     const byStu=new Map();
     slot.forEach(sess=>sessionCourseIdsFor(sess.id).forEach(cid=>studentsOfInSession(cid,sess.id).forEach(sid=>{
-      const k=`${sess.id}|${sid}|${cid}`; if(parked.has(k)) return;
+      const k=`${sess.id}|${sid}|${cid}`; if(parked.has(k) || dup.has(k)) return;
       if(!byStu.has(sid)) byStu.set(sid,[]);
       byStu.get(sid).push({k, cid, prio: overrides.has(k)?0 : movedSessionOf(sid,cid)===sess.id?1 : 2});
     })));
@@ -3096,8 +3121,12 @@ function examLoadRows(){
   const out=[];
   state.students.forEach(st=>{
     const byDate=new Map();
-    (st.courseIds||[]).forEach(cid=>{
+    // one entry per SUBJECT (two sections of the same subject = one exam);
+    // the section the student is seated for wins.
+    const seenSubj=new Set();
+    [...(st.courseIds||[])].sort((a,b)=>(seatOf.has(st.id+'|'+b)?1:0)-(seatOf.has(st.id+'|'+a)?1:0)).forEach(cid=>{
       const c=state.courses.find(x=>x.id===cid); if(!c) return;
+      const subj=paperRootOf(cid); if(seenSubj.has(subj)) return; seenSubj.add(subj);
       const sess=effectiveSessionFor(st.id,cid); if(!sess) return;
       if(!byDate.has(sess.date)) byDate.set(sess.date,[]);
       const seat=seatOf.get(st.id+'|'+cid); const room=seat?state.rooms.find(r=>r.id===seat.roomId):null;
@@ -3197,10 +3226,12 @@ function waitingGroups(){
     grp.entries.push({studentId,courseId,fromSessionId,kind}); grp.kinds.add(kind);
   };
   // Only students whose exam for that course has NO seat anywhere are waiting.
-  const seatedAny=new Set((state.seating||[]).map(x=>x.studentId+'|'+x.courseId));
+  const seatedAny=seatedSubjectSet();
+  const dups=new Set(state.heldDuplicateEntries||[]);
   (state.heldClashEntries||[]).forEach(k=>{
+    if(dups.has(k)) return;                       // another section of a subject they already write
     const [sess,sid,...rest]=k.split('|'); const cid=rest.join('|');
-    if(seatedAny.has(sid+'|'+cid)) return;
+    if(seatedAny.has(sid+'|'+paperRootOf(cid))) return;
     if(isMovedAway(sid,cid,sess)) return;
     add(cid,sid,sess,'clash');
   });
@@ -3412,7 +3443,9 @@ function renderSeating(){
       seen.get(sid).push(cid);
     }));
     seen.forEach((courseIds,sid)=>{
-      if(courseIds.length<2) return;
+      // Two sections of the SAME subject are not a clash -- the student
+      // writes that subject once. Needs 2+ different subjects at this time.
+      if(new Set(courseIds.map(paperRootOf)).size<2) return;
       if(!clashMap.has(sid)) clashMap.set(sid,[]);
       clashMap.get(sid).push({sessionId:sess.id,session:sess,courseIds});
     });
@@ -3422,6 +3455,7 @@ function renderSeating(){
   // here, or moved to a session at another time -- the student drops off.
   const _heldSet = new Set(state.heldClashEntries||[]);
   const _seatedNow = new Set(state.seating.map(s=>`${s.sessionId}|${s.studentId}|${s.courseId}`));
+  const _seatedSubj = seatedSubjectSet();
   let resolvedCount = 0;
   // A student is "placed" for a clash slot as soon as one of the clashing
   // papers has a seat. Placed students leave the main queue. If another paper
@@ -3432,9 +3466,12 @@ function renderSeating(){
     const student = state.students.find(x=>x.id===sid); if(!student) return;
     const unplaced = [], waiting = [];
     items.forEach(it=>{
-      const seated = it.courseIds.filter(cid=>_seatedNow.has(`${it.sessionId}|${sid}|${cid}`));
-      if(!seated.length) unplaced.push(it);
-      else if(seated.length < it.courseIds.length) waiting.push(it);
+      // Work per SUBJECT: a subject is placed when any section/code of it has
+      // a seat for this student (in any session).
+      const subjects=[...new Set(it.courseIds.map(paperRootOf))];
+      const placedSubj=subjects.filter(r=>_seatedSubj.has(sid+'|'+r));
+      if(!placedSubj.length) unplaced.push(it);
+      else if(placedSubj.length < subjects.length) waiting.push(it);
     });
     if(unplaced.length) clashStudents.push({student, items:unplaced});
     else if(waiting.length) waitingStudents.push({student, items:waiting});
@@ -3461,6 +3498,7 @@ function renderSeating(){
       <summary>✓ ${waitingStudents.length} student${waitingStudents.length===1?' is':'s are'} placed — their other paper at the same time is still waiting <span class="desc">(click to show · it can't be seated at that time: drag that paper to a session at a different time, or leave it for later)</span></summary>
       <div class="clash-student-list" style="margin-top:8px">${waitingStudents.map(clashCardHTML).join('')}</div>
     </details>` : ''}
+    ${duplicateEnrollmentHTML()}
      <div class="clash-help">Manual seating remains available after program/term grouping. Manual placement ignores the automatic course-per-room limit, is marked with a purple border, and is retained during subsequent seating generation when the placement is still valid.</div>
   </div>`;
   function clashCardHTML({student,items}){
@@ -3692,6 +3730,57 @@ let _dragSeatPayload = null;
 let _dragViewport = null;
 const _selectedDragKeys = new Set();
 let _clashWaitingOpen = false;
+let _dupOpen = true;
+/* ===== DUPLICATE ENROLLMENT =====
+   Students enrolled in two or more sections / codes of the SAME subject
+   (same course code or same title -- e.g. HU-1203 BS-SE-1A and BS-SE-1B, or
+   CS-3103 and CS-3301 "Artificial Intelligence"). They write the subject once:
+   one section is seated, the others are skipped. Listed in the clash window so
+   the enrollment data can be corrected. */
+function duplicateEnrollmentList(){
+  const seats=new Map(); (state.seating||[]).forEach(x=>seats.set(x.studentId+'|'+x.courseId,x));
+  const out=[];
+  state.students.forEach(st=>{
+    const by=new Map();
+    (st.courseIds||[]).forEach(cid=>{ const c=state.courses.find(x=>x.id===cid); if(!c) return; const r=paperRootOf(cid); if(!by.has(r)) by.set(r,[]); by.get(r).push(c); });
+    const subjects=[...by.values()].filter(l=>l.length>1).map(l=>l.map(c=>({c, sess:effectiveSessionFor(st.id,c.id), seat:seats.get(st.id+'|'+c.id)})));
+    if(subjects.length) out.push({student:st, subjects});
+  });
+  return out.sort((a,b)=>String(a.student.rollNo).localeCompare(String(b.student.rollNo),undefined,{numeric:true}));
+}
+function duplicateEnrollmentHTML(){
+  const list=duplicateEnrollmentList();
+  if(!list.length) return '';
+  const roomName=id=>{ const r=state.rooms.find(x=>x.id===id); return r?r.name:id; };
+  return `<details class="dup-enroll" ${_dupOpen?'open':''} ontoggle="_dupOpen=this.open">
+    <summary>🔁 Duplicate enrollment — ${list.length} student${list.length===1?'':'s'} enrolled in 2+ sections of the same subject
+      <span class="desc">(not a clash: each student writes the subject once — one section is seated, the other is skipped. Correct the enrollment data if a section is wrong.)</span>
+      <button class="btn sm ghost" style="margin-left:6px" onclick="event.preventDefault();event.stopPropagation();xlsxDuplicateEnrollment()">⬇ Download list</button></summary>
+    <div class="clash-student-list" style="margin-top:8px">${list.map(({student,subjects})=>`
+      <div class="clash-student-card dup-card">
+        <div class="cs-name">${esc(student.name)}</div>
+        <div class="cs-meta">ID: ${esc(student.rollNo)} · ${esc(student.program||'')} · ${esc(student.section||'')}</div>
+        ${subjects.map(sub=>`<div style="margin-top:6px"><span class="manual-badge" style="background:#fef3c7;color:#92400e">${esc(sub[0].c.title||sub[0].c.code)}</span>
+          ${sub.map(x=>`<div class="dup-row ${x.seat?'is-placed':''}">
+            <b>${esc(x.c.code)}</b> <small>${esc(x.c.section||'')}</small>${x.c.faculty?` · 👤 ${esc(x.c.faculty)}`:''}
+            ${x.sess?` · ${esc(x.sess.day||dayName(x.sess.date))} ${esc(x.sess.date)} ${esc(x.sess.label)}`:' · <i>not scheduled</i>'}
+            ${x.seat?`<span class="placed-badge" title="${esc(roomName(x.seat.roomId))}, Row ${x.seat.row}, Column ${x.seat.col}">✓ Placed · ${esc(roomName(x.seat.roomId))} R${x.seat.row}C${x.seat.col}</span>`:`<span class="dup-skip">skipped — duplicate</span>`}
+          </div>`).join('')}</div>`).join('')}
+      </div>`).join('')}</div>
+  </details>`;
+}
+function xlsxDuplicateEnrollment(){
+  const list=duplicateEnrollmentList();
+  if(!list.length){ toast('No duplicate enrollments','ok'); return; }
+  const roomName=id=>{ const r=state.rooms.find(x=>x.id===id); return r?r.name:''; };
+  const rows=[];
+  list.forEach(({student,subjects})=>subjects.forEach(sub=>sub.forEach(x=>rows.push({
+    'Roll No':student.rollNo,'Name':student.name,'Program':student.program||'','Student Section':student.section||'',
+    'Subject':x.c.title||'','Course Code':x.c.code,'Course Section':x.c.section||'','Teacher':x.c.faculty||'',
+    'Date':x.sess?x.sess.date:'','Session':x.sess?x.sess.label:'','Status':x.seat?'Seated':'Skipped (duplicate)',
+    'Room':x.seat?roomName(x.seat.roomId):'','Seat':x.seat?`COL-${x.seat.col} / ROW-${x.seat.row}`:''}))));
+  xlsxDownload({'Duplicate Enrollment':rows},'duplicate-enrollment.xlsx');
+}
 // Seats that were just filled by a drag/drop -- flashed briefly on the next
 // render so it's visually obvious the course landed, then cleared so the
 // flash doesn't replay on unrelated re-renders.
@@ -6305,8 +6394,11 @@ function unseatedStudentIdsForCourse(courseId){
 //     Auto Schedule was run again and moved the course), the student was not
 //     moved there by hand, and the course is still scheduled somewhere.
 // Parked UNSCHEDULED papers (scheduled nowhere) are kept on purpose.
+// Set of "studentId|subjectRoot" for every seat: a student seated for ANY
+// section / code of a subject has that subject placed.
+function seatedSubjectSet(){ return new Set((state.seating||[]).map(s=>s.studentId+'|'+paperRootOf(s.courseId))); }
 function isStaleParkEntry(p, seatedAny){
-  if(seatedAny.has(p.studentId+'|'+p.courseId)) return true;
+  if(seatedAny.has(p.studentId+'|'+paperRootOf(p.courseId))) return true;
   const scheduledSomewhere = state.scheduled.some(sc=>sc.courseId===p.courseId);
   if(!scheduledSomewhere) return false;
   const here = state.scheduled.some(sc=>sc.courseId===p.courseId && sc.sessionId===p.sessionId);
@@ -6314,7 +6406,7 @@ function isStaleParkEntry(p, seatedAny){
 }
 function reconcileParkedWithSeating(){
   if(!Array.isArray(state.parkedStudents) || !state.parkedStudents.length) return false;
-  const seatedAny = new Set((state.seating||[]).map(s=>s.studentId+'|'+s.courseId));
+  const seatedAny = seatedSubjectSet();
   const before = state.parkedStudents.length;
   state.parkedStudents = state.parkedStudents.filter(p=>!isStaleParkEntry(p, seatedAny));
   // de-duplicate (same student + course parked twice)
@@ -7484,6 +7576,12 @@ function reportDMY(v){
   return `${parseInt(m[3],10)} ${months[parseInt(m[2],10)-1]||m[2]} ${m[1]}`;
 }
 function summarySemesterLabel(){ const y=state.reportYear||inferSummaryYear(); return `${state.reportSemester||inferSummarySemester()} SEMESTER${y?' '+y:''}`; }
+// The exam title line already reads "... - FALL SEMESTER 2026"; the separate
+// semester line is only printed when the title does NOT contain it.
+function summarySemesterLineNeeded(){
+  const norm=t=>String(t||'').toUpperCase().replace(/\s+/g,' ').trim();
+  return !norm(reportExamTitle()).includes(norm(summarySemesterLabel()));
+}
 function summaryDateLabel(){
   const f=summarySelectedDates();
   if(f.exact) return reportDMY(f.exact);
@@ -7520,7 +7618,7 @@ function summaryHeaderRows(doc,title,date,rooms,departmentLabel,hideDateLines,co
   line(state.uniName||'DHA SUFFA UNIVERSITY',compact?15:22);
   line(reportExamTitle(),compact?12.5:19);
   line(departmentLabel||timetableDepartmentHeaderLabel(),compact?12:18);
-  line(summarySemesterLabel(),compact?12.5:20);
+  if(summarySemesterLineNeeded()) line(summarySemesterLabel(),compact?12.5:20);
   // Department Summary PDF omits these two lines (hideDateLines).
   if(!hideDateLines){
     const cal=`Calendar / Report Date: ${state.reportCalendarDate?reportDMY(state.reportCalendarDate):'All Selected Dates'}`;
@@ -7796,7 +7894,7 @@ async function xlsxSummary(kind){
     merge(r,4,cols,state.uniName||'DHA SUFFA UNIVERSITY',tf,center,31.5);r++;
     merge(r,4,cols,reportExamTitle(),ef,center,25.5);r++;
     merge(r,4,cols,excelDepartmentHeaderLabel(),mf,center,25.5);r++;
-    merge(r,4,cols,summarySemesterLabel(),mf,center,25.5);r++;
+    if(summarySemesterLineNeeded()){ merge(r,4,cols,summarySemesterLabel(),mf,center,25.5);r++; }
     merge(r,4,cols,`Calendar / Report Date: ${state.reportCalendarDate?reportDMY(state.reportCalendarDate):'All Selected Dates'}`,{name:'Times New Roman',size:14,bold:true},center,21);r++;
     merge(r,4,cols,`Data Date Range: ${summaryDateLabel()}`,{name:'Times New Roman',size:14,bold:true},center,21);r++;
     merge(r,4,cols,g.sessionLabel?`${reportDMY(g.date)}    Session ${g.sessionLabel}`:reportDMY(g.date),mf,center,22.9);r++;
@@ -7968,7 +8066,7 @@ async function xlsxDepartmentSummary(){
     merge(r,4,cols,state.uniName||'DHA SUFFA UNIVERSITY',tf,center,31.5);r++;
     merge(r,4,cols,reportExamTitle(),ef,center,25.5);r++;
     merge(r,4,cols,g.department||state.departmentName||'Department',mf,center,25.5);r++;
-    merge(r,4,cols,summarySemesterLabel(),mf,center,25.5);r++;
+    if(summarySemesterLineNeeded()){ merge(r,4,cols,summarySemesterLabel(),mf,center,25.5);r++; }
     merge(r,4,cols,`Calendar / Report Date: ${state.reportCalendarDate?reportDMY(state.reportCalendarDate):'All Selected Dates'}`,{name:'Times New Roman',size:14,bold:true},center,21);r++;
     merge(r,4,cols,`Data Date Range: ${summaryDateLabel()}`,{name:'Times New Roman',size:14,bold:true},center,21);r++;
     merge(r,4,cols,d.sessionLabel?`${reportDMY(d.date)}    Session ${d.sessionLabel}`:reportDMY(d.date),mf,center,22.9);r++;
@@ -10224,7 +10322,7 @@ render();
 
 /* Every Excel export reports its own failure instead of dying silently. */
 (function guardExcelExports(){
-  ['downloadTemplate','downloadClashSeatingSheet','xlsxShortAttendanceReport','xlsxCourseWiseSeating','xlsxNoticeBoard','xlsxCourseSummary','xlsxFacultySummary','xlsxDepartmentSummary','xlsxAttendanceSheets','xlsxTimetableProgram','xlsxTimetableDay','xlsxStudentPapers','xlsxDaily','xlsxSeatingGrid','xlsxFaculty','xlsxInvigilationFacultyWise','xlsxInvigilation','xlsxExamLoad'].forEach(name=>{
+  ['downloadTemplate','downloadClashSeatingSheet','xlsxShortAttendanceReport','xlsxCourseWiseSeating','xlsxNoticeBoard','xlsxCourseSummary','xlsxFacultySummary','xlsxDepartmentSummary','xlsxAttendanceSheets','xlsxTimetableProgram','xlsxTimetableDay','xlsxStudentPapers','xlsxDaily','xlsxSeatingGrid','xlsxFaculty','xlsxInvigilationFacultyWise','xlsxInvigilation','xlsxExamLoad','xlsxDuplicateEnrollment'].forEach(name=>{
     const fn=window[name]; if(typeof fn!=='function' || fn.__guarded) return;
     const fail=e=>{ console.error(name, e); toast(`Excel export failed (${name}): ${e&&e.message?e.message:e}`,'err'); };
     const g=function(...args){
