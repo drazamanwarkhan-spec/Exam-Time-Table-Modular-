@@ -327,6 +327,7 @@ tr:hover{background:#f8fafc}
 .rv-room{position:relative}
 .rv-room.is-auto{border-color:#7c3aed;background:#f5f3ff}
 .rv-tick{position:absolute;top:-7px;right:-7px;background:#7c3aed;color:#fff;border-radius:50%;width:18px;height:18px;font-size:12px;line-height:18px;text-align:center}
+.rv-autobar{margin-top:10px;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;background:#f5f3ff;border:1px solid #c4b5fd;color:#4c1d95;border-radius:7px;padding:7px 10px;font-size:12px}
 .rv-blocks{margin-top:10px;display:flex;flex-direction:column;gap:12px}
 .rv-block .seat{aspect-ratio:auto;height:66px;font-size:8px}
 .rv-block .seat .seat-student-name{font-weight:700;font-size:8.5px}
@@ -2714,7 +2715,7 @@ function runSeating(onlyGrouped){
   let autoFilled = 0;
   (state.autoFillRooms||[]).forEach(key=>{
     const [sid, rid] = key.split('|');
-    if(!state.sessions.some(x=>x.id===sid) || !state.rooms.some(r=>r.id===rid && r.active!==false)) return;
+    if(!state.sessions.some(x=>x.id===sid) || !state.rooms.some(r=>r.id===rid)) return;
     const entries=(state.parkedStudents||[]).filter(p=>p.sessionId===sid && !held.has(`${sid}|${p.studentId}|${p.courseId}`));
     if(!entries.length) return;
     const res=smartSeatEntries(sid, entries, rid, 1, {noOverflow:true});
@@ -3808,7 +3809,7 @@ let _emptyLastSess=null;
 function roomAvailabilityRows(sessList){
   const list=(sessList&&sessList.length?sessList:state.sessions).slice()
     .sort((a,b)=>(a.date||'').localeCompare(b.date||'')||(a.startTime||'').localeCompare(b.startTime||''));
-  const rooms=state.rooms.filter(r=>r.active!==false);
+  const rooms=state.rooms.filter(r=>r.active!==false || (state.autoFillRooms||[]).some(k=>k.endsWith('|'+r.id)) || (state.seating||[]).some(x=>x.roomId===r.id));
   const avail=[], seatMap=[];
   list.forEach(sess=>{
     const seats=(state.seating||[]).filter(x=>x.sessionId===sess.id);
@@ -3910,14 +3911,31 @@ function rvPickSession(key){ _rv.curSess=key; _rv.sel.clear(); rvSyncParkSession
 // so parked students can be dragged straight onto vacant seats here.
 function rvSyncParkSession(){ if(!_rv||!_rv.live) return; const sid=_rv.sessIdOf.get(_rv.curSess); if(sid && _parkSessionId!==sid){ _parkSessionId=sid; try{ renderStudentParkSidebar(); }catch(e){} } }
 // Room cards toggle: several rooms can be open at the same time.
-function rvToggleRoom(name){
-  const i=_rv.curRooms.indexOf(name);
-  if(i>=0){ _rv.curRooms.splice(i,1); [..._rv.sel].forEach(k=>{ if(k.startsWith(name+'§')) _rv.sel.delete(k); }); }
-  else _rv.curRooms.push(name);
-  renderRoomViewer();
+// In live mode, selecting a room also marks it "utilize in Auto Seating" for
+// this session; closing it removes that mark.
+function rvSetAutoFillQuiet(room,on){
+  const ids=rvLiveIds(room); if(!ids) return false;
+  const key=ids.sid+'|'+ids.rid; const list=autoFillRoomSet();
+  if(on){ if(!list.includes(key)){ list.push(key); return true; } }
+  else if(list.includes(key)){ state.autoFillRooms=list.filter(k=>k!==key); return true; }
+  return false;
 }
-function rvRoomsWithVacancy(){ _rv.curRooms=[..._rv.rooms.entries()].filter(([n,r])=>r.rows*r.cols-rvOcc(_rv.curSess,n).size-rvRes(_rv.curSess,n).size>0).map(([n])=>n).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true})); renderRoomViewer(); }
-function rvClearRooms(){ _rv.curRooms=[]; _rv.sel.clear(); renderRoomViewer(); }
+function rvAfterAutoFillChange(changed){ if(changed){ save(); _rvSyncing=true; try{ renderSeating(); } finally{ _rvSyncing=false; } } renderRoomViewer(); }
+function rvToggleRoom(name){
+  const i=_rv.curRooms.indexOf(name); let ch=false;
+  if(i>=0){ _rv.curRooms.splice(i,1); [..._rv.sel].forEach(k=>{ if(k.startsWith(name+'§')) _rv.sel.delete(k); }); ch=rvSetAutoFillQuiet(name,false); }
+  else { _rv.curRooms.push(name); ch=rvSetAutoFillQuiet(name,true); }
+  rvAfterAutoFillChange(ch);
+}
+function rvRoomsWithVacancy(){ _rv.curRooms=[..._rv.rooms.entries()].filter(([n,r])=>r.rows*r.cols-rvOcc(_rv.curSess,n).size-rvRes(_rv.curSess,n).size>0).map(([n])=>n).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
+  let ch=false; _rv.curRooms.forEach(n=>{ ch=rvSetAutoFillQuiet(n,true)||ch; }); rvAfterAutoFillChange(ch); }
+function rvClearRooms(){ let ch=false; _rv.curRooms.forEach(n=>{ ch=rvSetAutoFillQuiet(n,false)||ch; }); _rv.curRooms=[]; _rv.sel.clear(); rvAfterAutoFillChange(ch); }
+function rvGenerateNow(){
+  runSeating(); rvRefreshLive();
+  const sid=_rv&&_rv.live&&_rv.sessIdOf.get(_rv.curSess);
+  const left=sid?(state.parkedStudents||[]).filter(p=>p.sessionId===sid).length:0;
+  if(left) toast(`${left} student(s) of this session are still parked -- select more rooms or drag them from the left`,'warn');
+}
 const rvSelKey=(room,r,c)=>`${room}§${r}|${c}`;
 function rvToggleSeat(room,r,c){
   const occ=rvOcc(_rv.curSess,room);
@@ -4060,6 +4078,10 @@ function renderRoomViewer(){
       ${(_rv.history||[]).length?`<button class="btn sm ghost" onclick="rvUndo()" title="Reverse the last utilization">↶ Undo last</button>`:''}</div>
     <div class="rv-rooms">${rooms.map(x=>{ const on=_rv.curRooms.includes(x.name), auto=autoOn(x.name);
       return `<button type="button" class="rv-room ${on?'is-cur':''} ${x.occ===0&&x.res===0?'is-empty':x.free===0?'is-full':''} ${auto?'is-auto':''}" onclick="rvToggleRoom('${esc(x.name).replace(/'/g,"\\'")}')" title="${auto?'✓ Utilized in Auto Seating for parked students · ':''}${on?'Click to close':'Click to open'}">${on||auto?`<span class="rv-tick">✓</span>`:''}${esc(x.name)}<small>${x.free}/${x.cap} vacant</small></button>`; }).join('')}</div>
+    ${(()=>{ if(!_rv.live) return ''; const sid=_rv.sessIdOf.get(_rv.curSess); if(!sid) return '';
+        const used=[..._rv.rooms.keys()].filter(n=>autoOn(n)); const np=(state.parkedStudents||[]).filter(p=>p.sessionId===sid).length;
+        return `<div class="rv-autobar"><span>${used.length?`✓ <b>${used.length}</b> selected room${used.length===1?'':'s'} (${used.map(esc).join(', ')}) will be utilized in <b>Auto Seating</b> for this session`:'Select rooms above — every selected room is utilized in <b>Auto Seating</b> for this session'} · <b>${np}</b> parked student${np===1?'':'s'} waiting</span>
+          <button class="btn sm" style="background:#7c3aed;border-color:#7c3aed" ${used.length?'':'disabled'} onclick="rvGenerateNow()">🪑 Generate Seating now</button></div>`; })()}
     ${_rv.sel.size?`<div class="rv-utilize" style="margin-top:10px">
         <span><b>${_rv.sel.size}</b> seat(s) ticked — ${[...byRoom.entries()].map(([room,keys])=>`<b>${esc(room)}</b> col ${[...new Set(keys.map(k=>+k.split('|')[1]))].sort((a,b)=>a-b).join(', ')}`).join(' · ')}</span>
         <input id="rvLabel" placeholder="For (e.g. EE Dept — Circuits)" value="${esc(_rv.lastLabel||'')}" style="min-width:240px">
