@@ -296,6 +296,47 @@ tr:hover{background:#f8fafc}
 .ph-ok{background:#dcfce7;color:#166534;border-radius:8px;padding:0 5px;font-size:10px}
 .ph-row{display:flex;justify-content:space-between;align-items:center;gap:6px;padding:3px 0;border-top:1px dashed #e9d5ff}
 .ph-row button{font-size:10.5px;padding:2px 7px;border-radius:6px;border:1px solid #7c3aed;background:#7c3aed;color:#fff;cursor:pointer;flex:none}
+.rv-legend{display:inline-block;font-size:10.5px;padding:1px 7px;border-radius:9px;border:1px solid}
+.rv-legend.rv-free{background:#dcfce7;border-color:#86efac;color:#166534}.rv-legend.rv-occ{background:#e2e8f0;border-color:#94a3b8;color:#334155}.rv-legend.rv-res{background:#dbeafe;border-color:#93c5fd;color:#1e3a8a}
+.rv-rooms{display:flex;flex-wrap:wrap;gap:6px}
+.rv-room{display:flex;flex-direction:column;align-items:center;min-width:86px;padding:5px 8px;border-radius:8px;border:1.5px solid #cbd5e1;background:#fff;cursor:pointer;font-weight:700;font-size:12.5px}
+.rv-room small{font-weight:400;font-size:10px;color:#475569}
+.rv-room.is-empty{border-color:#86efac;background:#f0fdf4}.rv-room.is-full{border-color:#fca5a5;background:#fef2f2}
+.rv-room.is-cur{outline:3px solid #15803d}
+.rv-room-box{margin-top:10px;border:1px solid #bbf7d0;border-radius:8px;padding:10px;background:#fff}
+.rv-room-head{font-size:13px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:6px}
+.rv-actions{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
+.rv-grid{display:grid;gap:4px;width:max-content;min-width:100%}
+.rv-h{font-size:10px;font-weight:700;color:#475569;text-align:center;align-self:center}
+.rv-h.is-occ{color:#b91c1c}
+.rv-seat{min-height:40px;border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:12px}
+.rv-seat small{font-size:8.5px;line-height:1.1;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rv-seat.rv-occ{background:#e2e8f0;color:#475569;border:1px solid #cbd5e1;cursor:not-allowed}
+.rv-seat.rv-free{background:#dcfce7;border:1px dashed #22c55e;cursor:pointer;color:#166534;font-weight:700}
+.rv-seat.rv-free:hover{background:#bbf7d0}
+.rv-seat.rv-free.is-sel{background:#16a34a;color:#fff;border-style:solid}
+.rv-seat.rv-res{background:#dbeafe;border:1px solid #60a5fa;color:#1e3a8a;cursor:not-allowed}
+.rv-utilize{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#f0fdf4;border:1.5px solid #16a34a;border-radius:8px;padding:8px 10px;margin-bottom:8px}
+.booked-seat{background:#dbeafe !important;border:1px solid #60a5fa !important;color:#1e3a8a;min-height:42px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:not-allowed;font-size:11px}
+.booked-seat small{font-size:7px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rb-auto{font-size:11px;background:#7c3aed;color:#fff;border-radius:10px;padding:1px 8px}
+.rb-booked{font-size:11px;background:#dbeafe;color:#1e3a8a;border-radius:10px;padding:1px 8px}
+.rv-live{display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:#faf5ff;border:1px solid #ddd6fe;border-radius:8px;padding:7px 10px;margin-bottom:8px}
+.rv-autofill{display:flex;gap:6px;align-items:center;cursor:pointer;font-size:12px}
+.rv-autofill.on{color:#5b21b6}
+.rv-room{position:relative}
+.rv-room.is-auto{border-color:#7c3aed;background:#f5f3ff}
+.rv-tick{position:absolute;top:-7px;right:-7px;background:#7c3aed;color:#fff;border-radius:50%;width:18px;height:18px;font-size:12px;line-height:18px;text-align:center}
+.rv-blocks{margin-top:10px;display:flex;flex-direction:column;gap:12px}
+.rv-block .seat{aspect-ratio:auto;height:66px;font-size:8px}
+.rv-block .seat .seat-student-name{font-weight:700;font-size:8.5px}
+.rv-block .seat-col-header{min-height:40px}
+.rv-block .room-bar{position:static}
+.seat.rv-locked{cursor:not-allowed;position:relative}
+.seat.rv-locked .rv-lock{position:absolute;top:2px;right:3px;font-size:9px;opacity:.8}
+.seat.rv-vacant{background:#dcfce7 !important;border:1px dashed #22c55e !important;color:#166534;cursor:pointer;font-weight:700;display:flex;align-items:center;justify-content:center}
+.seat.rv-vacant:hover{background:#bbf7d0 !important}
+.seat.rv-vacant.is-sel{background:#16a34a !important;color:#fff;border-style:solid !important}
 </style>
 </head>
 <body>
@@ -596,8 +637,22 @@ tr:hover{background:#f8fafc}
 
   <div class="seating-layout">
     <aside id="studentParkSidebar" class="student-park-sidebar"></aside>
-    <div id="seatingView"></div>
+    <div style="min-width:0"><div id="seatingView"></div>
+  <!-- ROOM AVAILABILITY VIEWER (other departments) -->
+  <div class="card" id="roomViewerCard" style="border:1.5px solid #15803d;background:#f7fef9;margin-top:14px">
+    <div class="row" style="justify-content:space-between;align-items:flex-end;gap:10px;flex-wrap:wrap">
+      <div><h3>🏫 Room Availability Viewer — for other departments</h3>
+        <div class="desc">Upload the <b>Room Availability Excel</b> (from <b>🏫 Empty classes → ⬇ Download</b> above). Choose a session, click a <b>room number</b> to see its seats: <span class="rv-legend rv-free">vacant</span> seats can be ticked — when ticks appear, <b>✅ Utilize the class</b> books them; <span class="rv-legend rv-occ">🔒 occupied</span> and already-utilized seats are locked and cannot be used again. Download your utilized seats as Excel. Nothing here changes the exam seating plan.</div></div>
+      <div class="row" style="gap:8px;flex-wrap:wrap">
+        <label class="btn" style="cursor:pointer;background:#15803d;border-color:#15803d">⬆ Upload Room Availability Excel<input type="file" accept=".xlsx,.xls" style="display:none" onchange="rvUpload(event)"></label>
+        <button class="btn ghost" onclick="rvLoadCurrent()" title="Use the seating plan currently in this app instead of a file">Use this timetable</button>
+      </div>
+    </div>
+    <div id="rvBody" style="margin-top:10px"><div class="empty-state" style="padding:12px">No availability loaded yet.</div></div>
   </div>
+    </div>
+  </div>
+
   </div>
 
   <div id="seatingSubUnscheduled" class="seating-subpanel" style="display:none">
@@ -644,6 +699,7 @@ tr:hover{background:#f8fafc}
         <label style="font-size:11px;font-weight:600;color:var(--mut)">Search<br><input id="prSearch" placeholder="Teacher / subject / code" oninput="renderPaperRequirement()" style="width:170px"></label>
         <button class="btn" onclick="xlsxPaperRequirement()">⬇ Excel</button>
         <button class="btn ghost" onclick="pdfPaperRequirement()">⬇ PDF</button>
+        <button class="btn" style="background:#0f766e;border-color:#0f766e" onclick="pdfEnvelopeLabels()" title="Printable labels for question-paper envelopes (settings in Reports)">✉️ Envelope Labels</button>
       </div>
     </div>
   </div>
@@ -883,6 +939,13 @@ tr:hover{background:#f8fafc}
     <div class="card"><h3>Student Individual Timetables</h3><div class="desc">One row/page per student showing their name, roll no, all scheduled exams with date, time, room and seat number.</div><div class="row"><button class="btn" onclick="xlsxStudentPapers()">⬇ Excel</button><button class="btn ghost" onclick="pdfStudentPapers()">⬇ PDF (table)</button><button class="btn ghost" onclick="pdfStudentAdmitCards()">⬇ PDF (Admit Card — 1 page/student)</button></div></div>
     <div class="card"><h3>Daily Class Schedule</h3><div class="desc">Per-day exam schedule with assigned rooms.</div><div class="row"><button class="btn" onclick="xlsxDaily()">⬇ Excel</button><button class="btn ghost" onclick="pdfDaily()">⬇ PDF</button></div></div>
     <div class="card"><h3>Seating Plan (room grid)</h3><div class="desc">Room-by-room seat layout for each session, laid out as a row/column grid. Each seat shows roll no, name and course code + course name. Choose <b>📑 Excel sheets → Day-wise</b> above (or in Auto Seating) for one worksheet per date.</div><div class="row"><button class="btn" onclick="xlsxSeatingGrid()">⬇ Excel</button><button class="btn ghost" onclick="pdfSeating()">⬇ PDF</button></div></div>
+    <div class="card" style="border:1.5px solid #0f766e"><h3>✉️ Envelope Labels (question papers)</h3><div class="desc">Printable labels to paste on question-paper envelopes: university, exam, <b>course code &amp; name</b>, class(es), teacher, <b>date, day, session, time, room</b>, roll-number range and a big <b>No. of Papers</b> box (+ spare % from Teacher Paper Requirement), with Received / Returned signature lines. Uses the 📅 Report dates above. Sorted date → session → room for easy distribution.</div>
+      <div class="row" style="gap:10px;align-items:flex-end;flex-wrap:wrap;margin-top:6px">
+        <label style="font-size:11.5px;font-weight:600">Envelope per<br><select id="envMode" onchange="state.envelopeMode=this.value;save()"><option value="room">Room (one envelope per paper per room)</option><option value="paper">Paper (one envelope per paper, all rooms)</option></select></label>
+        <label style="font-size:11.5px;font-weight:600">Labels per A4 page<br><select id="envPerPage" onchange="state.envelopePerPage=+this.value;save()"><option value="1">1 (large)</option><option value="2">2</option><option value="4">4 (strips)</option></select></label>
+        <button class="btn" style="background:#0f766e;border-color:#0f766e" onclick="pdfEnvelopeLabels()">⬇ Envelope Labels PDF</button>
+        <button class="btn ghost" onclick="xlsxEnvelopeLabels()">⬇ Envelope List Excel</button>
+      </div></div>
     <div class="card" style="border:1.5px solid #7c3aed"><h3>📝 Teacher Paper Requirement</h3><div class="desc">How many papers each teacher must prepare, with date, day, session, subject name, classes, students and copies to print. Uses the 📅 Report dates above. Open the <b>📝 Teacher Paper Requirement</b> tab to view and filter on screen.</div><div class="row"><button class="btn" onclick="xlsxPaperRequirement()">⬇ Excel</button><button class="btn ghost" onclick="pdfPaperRequirement()">⬇ PDF</button><button class="btn ghost" onclick="document.querySelector('.tab[data-tab=&quot;paperreq&quot;]').click()">👁 Open tab</button></div></div>
     <div class="card"><h3>Faculty Courses</h3><div class="desc">One page per faculty member: every course they teach with exam date, day, session, time and the room(s) where it is held (from the current seating plan).</div><div class="row"><button class="btn" onclick="xlsxFaculty()">⬇ Excel</button><button class="btn ghost" onclick="pdfFaculty()">⬇ PDF</button></div></div>
   </div>
@@ -2322,7 +2385,8 @@ function fillUnseatedMaxCapacity(onlyGrouped, groupedIds, held){
     if(!need.length) continue;
     const occ=new Map(); // roomId -> Map("row|col" -> courseId)
     state.seating.filter(s=>s.sessionId===sess.id).forEach(s=>{ if(!occ.has(s.roomId)) occ.set(s.roomId,new Map()); occ.get(s.roomId).set(s.row+'|'+s.col,s.courseId); });
-    const paperAt=(rid,r,c)=>{ const m=occ.get(rid); const v=m&&m.get(r+'|'+c); return v?paperRootOf(v):null; };
+    bookedSeatsFor(sess.id).forEach((label,k)=>{ const [rid,r,c]=k.split('|'); if(!occ.has(rid)) occ.set(rid,new Map()); occ.get(rid).set(r+'|'+c,'__booked__'); });
+    const paperAt=(rid,r,c)=>{ const m=occ.get(rid); const v=m&&m.get(r+'|'+c); return (v && v!=='__booked__')?paperRootOf(v):null; };
     const freeIn=room=>rowsOf(room)*colsOf(room)-((occ.get(room.id)||new Map()).size);
     need.sort((a,b)=>b[1].length-a[1].length);
     for(const [cid,list] of need){
@@ -2591,7 +2655,9 @@ function runSeating(onlyGrouped){
     }
   }
 
-  state.seating = seating;
+  // Seats booked by other departments are never used for exam students: any
+  // generated seat on a booked spot is dropped (the fill pass re-seats them).
+  state.seating = seating.filter(x=>!isSeatBooked(x.sessionId,x.roomId,x.row,x.col));
   state.groupsSeatingStale = false;
 
   // Students intentionally placed in the manual park are not re-added by an
@@ -2616,6 +2682,7 @@ function runSeating(onlyGrouped){
     if(!state.scheduled.some(sc=>sc.sessionId===sess.id && sc.courseId===c.id) && movedSessionOf(st.id,c.id)!==sess.id) return;
     if(isMovedAway(st.id,c.id,sess.id)) return;
     if(held.has(`${o.sessionId}|${o.studentId}|${o.courseId}`)) return;
+    if(isSeatBooked(o.sessionId,o.roomId,o.row,o.col)) return;
     const occupied = state.seating.find(x=>x.sessionId===o.sessionId && x.roomId===o.roomId && x.row===o.row && x.col===o.col);
     // Manual overrides are authoritative. If automatic seating reused the
     // target slot, release that generated occupant so a manual placement can
@@ -2641,6 +2708,18 @@ function runSeating(onlyGrouped){
   // papers' columns where the left/right neighbour is a different paper.
   // Only if the session is physically full does anyone go to the park.
   const fill = fillUnseatedMaxCapacity(onlyGrouped, allGroupedCourseIds, held);
+  // Rooms ticked "✓ Utilize this room in Auto Seating": the session's parked
+  // students are seated into that room's vacant seats (one-column gap, same
+  // course never side by side, booked seats skipped). Whoever doesn't fit stays parked.
+  let autoFilled = 0;
+  (state.autoFillRooms||[]).forEach(key=>{
+    const [sid, rid] = key.split('|');
+    if(!state.sessions.some(x=>x.id===sid) || !state.rooms.some(r=>r.id===rid && r.active!==false)) return;
+    const entries=(state.parkedStudents||[]).filter(p=>p.sessionId===sid && !held.has(`${sid}|${p.studentId}|${p.courseId}`));
+    if(!entries.length) return;
+    const res=smartSeatEntries(sid, entries, rid, 1, {noOverflow:true});
+    autoFilled += res.placed;
+  });
   const fillFlat = [];
   state.sessions.forEach(sess=>sessionCourseIdsFor(sess.id).forEach(cid=>fillFlat.push({sessionId:sess.id, courseId:cid})));
   fillFlat.forEach(sc=>{
@@ -2690,6 +2769,7 @@ function runSeating(onlyGrouped){
     (roomTagOverflowCount ? ` ⚠ ${roomTagOverflowCount} room-tagged course${roomTagOverflowCount>1?'s':''} overflowed into other rooms` : '') +
     (noLabRoomCount ? ` ⚠ ${noLabRoomCount} Lab course(s) seated in regular rooms -- no Lab room is configured (check the Lab box in Rooms)` : '') +
     (fill.placed ? ` · ${fill.placed} extra seated to use full room capacity` : '') +
+    (autoFilled ? ` · ✓ ${autoFilled} parked student(s) seated in ticked room(s)` : '') +
     (fill.overflow ? ` ⚠ ${fill.overflow} could not get a seat without sitting next to the same subject -- parked (see "Where can I place them?")` : '') +
     (()=>{ const nd=(state.heldDuplicateEntries||[]).length, nc=held.size-nd;
       return (nc>0 ? ` ⛔ ${nc} same-time paper${nc===1?'':'s'} not seated (student already has an exam then) -- see Clash Students` : '')
@@ -3370,6 +3450,133 @@ function pdfPaperRequirement(){
   doc.save('teacher-paper-requirement.pdf');
   toast(`Downloaded Teacher Paper Requirement PDF — ${data.length} teacher(s), ${data.reduce((n,d)=>n+d.papers,0)} paper(s)`,'ok');
 }
+/* ================= ENVELOPE LABELS =================
+   One label per question-paper envelope. mode 'room': one envelope per paper
+   per room (what is handed to each room's invigilator). mode 'paper': one
+   envelope per paper (same course name + same teacher, one session) with all
+   its rooms. Counts come from the seating plan (enrolment when no seating). */
+function envelopeData(mode){
+  mode = mode==='paper' ? 'paper' : 'room';
+  const spare=Math.max(0,+state.paperSparePct||0);
+  const seats=reportSeating();
+  const {romanMap}=sessionOrderMaps();
+  const stuById=new Map(state.students.map(x=>[x.id,x]));
+  const env=new Map();
+  [...state.sessions].filter(s=>reportDateAllowed(s.date))
+    .sort((a,b)=>(a.date||'').localeCompare(b.date||'')||(a.startTime||'').localeCompare(b.startTime||''))
+    .forEach(sess=>{
+      sessionCourseIdsFor(sess.id).forEach(cid=>{
+        const c=state.courses.find(x=>x.id===cid); if(!c) return;
+        const mine=seats.filter(x=>x.sessionId===sess.id && x.courseId===cid);
+        const list = mine.length ? mine.map(x=>({sid:x.studentId, room:state.rooms.find(r=>r.id===x.roomId)?.name||''}))
+                                 : studentsOfInSession(cid,sess.id).map(sid=>({sid, room:''}));
+        list.forEach(x=>{
+          const paperKey=paperRootOf(cid)+'|'+String(c.faculty||'').toLowerCase().trim();
+          const key = mode==='room' ? `${sess.id}|${x.room}|${paperKey}` : `${sess.id}|${paperKey}`;
+          if(!env.has(key)) env.set(key,{sess, roman:romanMap[sess.id]||romanNum(sessionPeriodIndex(sess)), codes:new Set(), title:c.title||c.code, classes:new Set(), faculty:c.faculty||'', rooms:new Map(), rolls:[]});
+          const e=env.get(key);
+          e.codes.add(c.code); e.classes.add(c.section||c.program||'');
+          e.rooms.set(x.room,(e.rooms.get(x.room)||0)+1);
+          const st=stuById.get(x.sid); e.rolls.push(String(st?st.rollNo:x.sid));
+        });
+      });
+    });
+  const out=[...env.values()].map(e=>{
+    e.rolls.sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
+    const n=e.rolls.length;
+    return {...e, students:n, copies:Math.ceil(n*(1+spare/100)),
+      roomText:[...e.rooms.entries()].filter(([r])=>r).map(([r,k])=>mode==='room'?r:`${r} (${k})`).join(', ') || 'To be assigned',
+      rollRange: n ? (n>1?`${e.rolls[0]} – ${e.rolls[n-1]}`:e.rolls[0]) : ''};
+  });
+  out.sort((a,b)=>(a.sess.date||'').localeCompare(b.sess.date||'')||(a.sess.startTime||'').localeCompare(b.sess.startTime||'')||
+    String(a.roomText).localeCompare(String(b.roomText),undefined,{numeric:true})||String(a.title).localeCompare(String(b.title)));
+  return out;
+}
+function drawEnvelopeLabel(doc, x, y, w, h, e, idx, total, mode){
+  // scale against a reference label of 515 x 270 pt (fits width AND height)
+  const k=Math.max(0.6, Math.min(1.7, Math.min(w/515, h/270)));
+  const fs=v=>Math.max(5.5, v*k);
+  const pad=12*Math.max(0.7,Math.min(1.4,k));
+  doc.setDrawColor(0,0,0).setLineWidth(1.2); doc.rect(x, y, w, h);
+  doc.setLineWidth(.5); doc.rect(x+4, y+4, w-8, h-8);
+  let yy=y+pad+fs(14);
+  const cx=x+w/2, left=x+pad, inner=w-2*pad;
+  const center=(t,size,bold)=>{ doc.setFont('times',bold?'bold':'normal').setFontSize(size).setTextColor(0,0,0); doc.splitTextToSize(String(t),inner).forEach(l=>{ doc.text(l,cx,yy,{align:'center'}); yy+=size*1.18; }); };
+  center(state.uniName||'DHA SUFFA UNIVERSITY', fs(16), true);
+  center(reportExamTitle(), fs(10.5), true);
+  yy+=fs(2);
+  // banner
+  doc.setFillColor(0,0,0); doc.rect(x+pad, yy-fs(10), inner, fs(15), 'F');
+  doc.setTextColor(255,255,255).setFont('times','bold').setFontSize(fs(11));
+  doc.text('QUESTION PAPER ENVELOPE', cx, yy, {align:'center'}); doc.setTextColor(0,0,0);
+  yy+=fs(5)+fs(15)*1.05;   // clear the banner before the course line
+  // course (big)
+  doc.setFont('times','bold').setFontSize(fs(15));
+  doc.splitTextToSize(`${[...e.codes].join(' / ')} — ${e.title}`, inner).slice(0,2).forEach(l=>{ doc.text(l,cx,yy,{align:'center'}); yy+=fs(15)*1.15; });
+  yy+=fs(2);
+  // two-column details + big papers box on the right
+  const boxW=Math.min(inner*0.3, 120*Math.max(0.75,k)), boxH=fs(58);
+  const detW=inner-boxW-8;
+  const row=(label,val)=>{ doc.setFont('times','bold').setFontSize(fs(10.5)); doc.text(label,left,yy); const lw=doc.getTextWidth(label)+4;
+    doc.setFont('times','normal'); const lines=doc.splitTextToSize(String(val||'—'), detW-lw).slice(0,2); lines.forEach((l,i)=>doc.text(l,left+lw,yy+i*fs(10.5)*1.15)); yy+=fs(10.5)*1.3*lines.length; };
+  const boxY=yy-fs(9);
+  row('Class(es):', [...e.classes].filter(Boolean).join(', '));
+  row('Teacher:', e.faculty);
+  row('Date:', `${e.sess.day||dayName(e.sess.date)}, ${reportDMY(e.sess.date)}`);
+  row('Session:', `Session ${e.roman} (${periodName(e.sess)})   Time: ${e.sess.startTime} – ${e.sess.endTime}`);
+  row(mode==='room'?'Room:':'Rooms:', e.roomText);
+  row('Roll Nos:', e.rollRange);
+  // papers box
+  const bx=x+w-pad-boxW;
+  doc.setLineWidth(1.4); doc.rect(bx, boxY, boxW, boxH);
+  doc.setFont('times','bold').setFontSize(fs(9)); doc.text('No. of Papers', bx+boxW/2, boxY+fs(11), {align:'center'});
+  doc.setFontSize(fs(30)); doc.text(String(e.copies), bx+boxW/2, boxY+fs(40), {align:'center'});
+  doc.setFont('times','normal').setFontSize(fs(7.5));
+  doc.text(e.copies!==e.students?`${e.students} students + spare`:`${e.students} students`, bx+boxW/2, boxY+boxH-fs(5), {align:'center'});
+  // signature lines at the bottom of the label
+  const sy=y+h-pad-fs(4);
+  doc.setFont('times','normal').setFontSize(fs(9.5));
+  doc.text('Received by: ______________________', left, sy-fs(16));
+  doc.text('Returned by: ______________________', left, sy);
+  doc.text('Papers returned: ______', x+w-pad, sy-fs(16), {align:'right'});
+  doc.text('Sign: ______________', x+w-pad, sy, {align:'right'});
+  doc.setFontSize(fs(7)); doc.setTextColor(110,110,110);
+  doc.text(`Envelope ${idx} of ${total}`, x+w-pad, y+pad, {align:'right'}); doc.setTextColor(0,0,0);
+}
+function pdfEnvelopeLabels(){
+  const mode=state.envelopeMode==='paper'?'paper':'room';
+  const per=[1,2,4].includes(+state.envelopePerPage)?+state.envelopePerPage:2;
+  const data=envelopeData(mode);
+  if(!data.length){ toast(noReportDataMsg(),'warn'); return; }
+  // 1 per page: landscape (big label) · 2: two halves · 4: four wide strips
+  const doc=new jsPDF({unit:'pt',format:'a4',orientation:per===1?'landscape':'portrait'});
+  const pw=doc.internal.pageSize.getWidth(), ph=doc.internal.pageSize.getHeight(), m=22, gap=16;
+  const cols=1, rows=per;
+  const w=(pw-2*m-(cols-1)*gap)/cols, h=(ph-2*m-(rows-1)*gap)/rows;
+  data.forEach((e,i)=>{
+    const slot=i%per; if(i && slot===0) doc.addPage();
+    const cx=slot%cols, cy=Math.floor(slot/cols);
+    drawEnvelopeLabel(doc, m+cx*(w+gap), m+cy*(h+gap), w, h, e, i+1, data.length, mode);
+    if(slot===0){ // dashed cut lines
+      doc.setLineDashPattern([4,3],0); doc.setDrawColor(150,150,150).setLineWidth(.4);
+      for(let rI=1; rI<rows; rI++){ const ly=m+rI*h+(rI-0.5)*gap; doc.line(6, ly, pw-6, ly); }
+      doc.setLineDashPattern([],0); doc.setDrawColor(0,0,0);
+    }
+  });
+  doc.save(`envelope-labels-${mode==='room'?'per-room':'per-paper'}.pdf`);
+  toast(`Downloaded ${data.length} envelope label(s) — ${per} per page, ${doc.getNumberOfPages()} page(s)`,'ok');
+}
+function xlsxEnvelopeLabels(){
+  const mode=state.envelopeMode==='paper'?'paper':'room';
+  const data=envelopeData(mode);
+  if(!data.length){ toast(noReportDataMsg(),'warn'); return; }
+  const rows=data.map((e,i)=>({'Envelope #':i+1,'Date':reportDMY(e.sess.date),'Day':e.sess.day||dayName(e.sess.date),'Session':`Session ${e.roman} (${periodName(e.sess)})`,'Time':`${e.sess.startTime}-${e.sess.endTime}`,
+    [mode==='room'?'Room':'Rooms']:e.roomText,'Course Code':[...e.codes].join(' / '),'Course Name':e.title,'Class(es)':[...e.classes].filter(Boolean).join(', '),'Teacher':e.faculty,
+    'Students':e.students,'No. of Papers':e.copies,'Roll Nos':e.rollRange,'Received by':'','Returned by':'','Papers returned':''}));
+  const sheets={'Envelopes':rows};
+  if(seatingExcelLayout()==='day') [...new Set(rows.map(r=>r.Date))].forEach(d=>{ sheets[d]=rows.filter(r=>r.Date===d); });
+  xlsxDownload(sheets,`envelope-list-${mode==='room'?'per-room':'per-paper'}.xlsx`);
+}
 /* ================= EXAMS PER DAY ================= */
 function examLoadRows(){
   const min=Math.max(2, +state.examLoadMin || 3);
@@ -3596,8 +3803,274 @@ function placeWaitingGroup(courseId, sessId, roomId){
   if(blocked.length) setTimeout(()=>toast(`${blocked.length} student(s) left waiting -- they have another exam at that time`,'warn'),1200);
 }
 let _emptyOpen=false;
+let _emptyLastSess=null;
+/* ===== ROOM AVAILABILITY: Excel export (with occupied column numbers) ===== */
+function roomAvailabilityRows(sessList){
+  const list=(sessList&&sessList.length?sessList:state.sessions).slice()
+    .sort((a,b)=>(a.date||'').localeCompare(b.date||'')||(a.startTime||'').localeCompare(b.startTime||''));
+  const rooms=state.rooms.filter(r=>r.active!==false);
+  const avail=[], seatMap=[];
+  list.forEach(sess=>{
+    const seats=(state.seating||[]).filter(x=>x.sessionId===sess.id);
+    rooms.forEach(r=>{
+      const rs=seats.filter(x=>x.roomId===r.id);
+      const rowsN=r.rows||0, colsN=r.cols||0, cap=rowsN*colsN;
+      const perCol=[]; for(let c=1;c<=colsN;c++) perCol.push({c, used:rs.filter(x=>x.col===c).length});
+      const occCols=perCol.filter(x=>x.used>0).map(x=>x.c);
+      const freeCols=perCol.filter(x=>x.used===0).map(x=>x.c);
+      const partCols=perCol.filter(x=>x.used>0 && x.used<rowsN).map(x=>`${x.c} (${rowsN-x.used} free)`);
+      const codes=[...new Set(rs.map(x=>state.courses.find(c=>c.id===x.courseId)?.code).filter(Boolean))];
+      avail.push({'Date':sess.date,'Day':sess.day||dayName(sess.date),'Session':sess.label,'Time':`${sess.startTime}-${sess.endTime}`,
+        'Room':r.name,'Rows':rowsN,'Columns':colsN,'Capacity':cap,'Occupied seats':rs.length,'Free seats':Math.max(0,cap-rs.length),
+        'Status':rs.length===0?'EMPTY':rs.length>=cap?'FULL':'PARTLY FREE',
+        'Occupied columns':occCols.join(', ')||'—','Fully free columns':freeCols.join(', ')||'—','Partly free columns':partCols.join(', ')||'—',
+        'Courses in room':codes.join(', ')});
+      rs.forEach(x=>{ const c=state.courses.find(c=>c.id===x.courseId), st=state.students.find(z=>z.id===x.studentId);
+        seatMap.push({'Date':sess.date,'Session':sess.label,'Time':`${sess.startTime}-${sess.endTime}`,'Room':r.name,'Row':x.row,'Column':x.col,'Status':'OCCUPIED',
+        'Course Code':c?.code||'','Course Name':c?.title||'','Section':c?.section||'','Teacher':c?.faculty||'','Roll No':st?st.rollNo:'','Student Name':st?st.name:''}); });
+    });
+  });
+  const roomRows=rooms.map(r=>({'Room':r.name,'Rows':r.rows||0,'Columns':r.cols||0,'Capacity':(r.rows||0)*(r.cols||0),'Lab':r.isLab?'Yes':''}));
+  return {avail, seatMap, roomRows};
+}
+function xlsxRoomAvailability(){
+  const {avail,seatMap,roomRows}=roomAvailabilityRows(_emptyLastSess);
+  if(!avail.length){ toast('No sessions / rooms to export','warn'); return; }
+  xlsxDownload({'Availability':avail,'Seat Map':seatMap.length?seatMap:[{'Date':'','Session':'','Time':'','Room':'','Row':'','Column':'','Status':'','Course Code':''}],'Rooms':roomRows},'room-availability.xlsx');
+}
+/* ===== ROOM AVAILABILITY VIEWER (upload) =====
+   Read-only view of occupied seats; vacant seats can be selected and
+   reserved locally (never written into the exam seating plan). */
+let _rv=null, _rvSyncing=false;
+function rvSessKey(date,label,time){ return `${date}|${label}|${time}`; }
+function rvBuild(avail, seatMap, roomRows){
+  const rv={sessions:new Map(), rooms:new Map(), occ:new Map(), reserved:new Map(), sel:new Set(), curSess:null, curRooms:[], source:''};
+  roomRows.forEach(r=>{ const name=String(r['Room']||'').trim(); if(name) rv.rooms.set(name,{rows:+r['Rows']||0, cols:+r['Columns']||0, lab:/y/i.test(String(r['Lab']||''))}); });
+  avail.forEach(a=>{
+    const key=rvSessKey(String(a['Date']||''),String(a['Session']||''),String(a['Time']||''));
+    if(!rv.sessions.has(key)) rv.sessions.set(key,{key,date:String(a['Date']||''),day:String(a['Day']||''),label:String(a['Session']||''),time:String(a['Time']||'')});
+    const name=String(a['Room']||'').trim();
+    if(name && !rv.rooms.has(name)) rv.rooms.set(name,{rows:+a['Rows']||0, cols:+a['Columns']||0});
+  });
+  seatMap.forEach(x=>{
+    if(!x['Room']) return;
+    const key=rvSessKey(String(x['Date']||''),String(x['Session']||''),String(x['Time']||''))+'|'+String(x['Room']).trim();
+    if(!rv.occ.has(key)) rv.occ.set(key,new Map());
+    rv.occ.get(key).set(`${+x['Row']}|${+x['Column']}`, {code:String(x['Course Code']||''), title:String(x['Course Name']||''), section:String(x['Section']||''), teacher:String(x['Teacher']||''), roll:String(x['Roll No']||''), name:String(x['Student Name']||'')});
+  });
+  // Older files only carried the course code -- fill course name, teacher and
+  // (when the session/room exists in this timetable) the student from the app.
+  const byCode=new Map(); state.courses.forEach(c=>{ if(c.code && !byCode.has(c.code)) byCode.set(c.code,c); });
+  const seatAt=new Map();
+  state.seating.forEach(x=>{ const ss=state.sessions.find(z=>z.id===x.sessionId), r=state.rooms.find(z=>z.id===x.roomId); if(ss&&r) seatAt.set(rvSessKey(ss.date,ss.label,`${ss.startTime}-${ss.endTime}`)+'|'+r.name+'|'+x.row+'|'+x.col, x); });
+  rv.occ.forEach((m,key)=>m.forEach((o,rc)=>{
+    const c=byCode.get(o.code);
+    if(c){ if(!o.title) o.title=c.title||''; if(!o.teacher) o.teacher=c.faculty||''; if(!o.section) o.section=c.section||''; }
+    if(!o.name){ const x=seatAt.get(key+'|'+rc); const st=x&&state.students.find(z=>z.id===x.studentId); if(st){ o.name=st.name; o.roll=st.rollNo; } }
+  }));
+  rv.curSess=[...rv.sessions.keys()][0]||null;
+  return rv;
+}
+function rvUpload(e){
+  const f=e.target.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=ev=>{
+    try{
+      const wb=XLSX.read(ev.target.result,{type:'array'});
+      const sh=n=>{ const k=wb.SheetNames.find(x=>x.toLowerCase()===n.toLowerCase()); return k?XLSX.utils.sheet_to_json(wb.Sheets[k],{defval:''}):null; };
+      const avail=sh('Availability'), seat=sh('Seat Map')||[], rooms=sh('Rooms')||[];
+      if(!avail){ toast('This file has no "Availability" sheet -- use ⬇ Download Room Availability (Excel) from Empty classes','err'); e.target.value=''; return; }
+      _rv=rvBuild(avail, seat, rooms); _rv.source=f.name;
+      renderRoomViewer(); toast(`Loaded ${_rv.sessions.size} session(s) and ${_rv.rooms.size} room(s) from ${f.name}`,'ok');
+    }catch(err){ console.error(err); toast('Could not read the file: '+err.message,'err'); }
+    e.target.value='';
+  };
+  r.readAsArrayBuffer(f);
+}
+function rvLoadCurrent(keepSel){
+  const {avail,seatMap,roomRows}=roomAvailabilityRows(null);
+  if(!avail.length){ toast('No sessions / rooms yet','warn'); return; }
+  const prev=_rv;
+  _rv=rvBuild(avail, seatMap, roomRows); _rv.source='this timetable (live)'; _rv.live=true;
+  _rv.sessIdOf=new Map(state.sessions.map(s=>[rvSessKey(s.date,s.label,`${s.startTime}-${s.endTime}`), s.id]));
+  _rv.roomIdOf=new Map(state.rooms.map(r=>[r.name, r.id]));
+  (state.roomBookings||[]).forEach(b=>{ const s=state.sessions.find(x=>x.id===b.sessionId), r=state.rooms.find(x=>x.id===b.roomId); if(!s||!r) return;
+    rvRes(rvSessKey(s.date,s.label,`${s.startTime}-${s.endTime}`), r.name).set(`${b.row}|${b.col}`, b.label); });
+  if(prev && prev.live && keepSel){ _rv.curSess=prev.curSess; _rv.curRooms=prev.curRooms||[]; _rv.history=prev.history; _rv.lastLabel=prev.lastLabel; _rv.sel=prev.sel; }
+  else { const ps=_parkSessionId&&state.sessions.find(x=>x.id===_parkSessionId); if(ps){ const k=rvSessKey(ps.date,ps.label,`${ps.startTime}-${ps.endTime}`); if(_rv.sessions.has(k)) _rv.curSess=k; } }
+  if(!keepSel) rvSyncParkSession();
+  renderRoomViewer();
+}
+function rvRefreshLive(){ if(_rv && _rv.live) rvLoadCurrent(true); }
+function rvLiveIds(room){ if(!_rv||!_rv.live) return null; const sid=_rv.sessIdOf.get(_rv.curSess), rid=_rv.roomIdOf.get(room); return sid&&rid?{sid,rid}:null; }
+function rvOcc(sessKey, room){ return _rv.occ.get(sessKey+'|'+room)||new Map(); }
+function rvRes(sessKey, room){ const k=sessKey+'|'+room; if(!_rv.reserved.has(k)) _rv.reserved.set(k,new Map()); return _rv.reserved.get(k); }
+function rvPickSession(key){ _rv.curSess=key; _rv.sel.clear(); rvSyncParkSession(); renderRoomViewer(); }
+// Keep the Student Park on the left showing the same session as the viewer,
+// so parked students can be dragged straight onto vacant seats here.
+function rvSyncParkSession(){ if(!_rv||!_rv.live) return; const sid=_rv.sessIdOf.get(_rv.curSess); if(sid && _parkSessionId!==sid){ _parkSessionId=sid; try{ renderStudentParkSidebar(); }catch(e){} } }
+// Room cards toggle: several rooms can be open at the same time.
+function rvToggleRoom(name){
+  const i=_rv.curRooms.indexOf(name);
+  if(i>=0){ _rv.curRooms.splice(i,1); [..._rv.sel].forEach(k=>{ if(k.startsWith(name+'§')) _rv.sel.delete(k); }); }
+  else _rv.curRooms.push(name);
+  renderRoomViewer();
+}
+function rvRoomsWithVacancy(){ _rv.curRooms=[..._rv.rooms.entries()].filter(([n,r])=>r.rows*r.cols-rvOcc(_rv.curSess,n).size-rvRes(_rv.curSess,n).size>0).map(([n])=>n).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true})); renderRoomViewer(); }
+function rvClearRooms(){ _rv.curRooms=[]; _rv.sel.clear(); renderRoomViewer(); }
+const rvSelKey=(room,r,c)=>`${room}§${r}|${c}`;
+function rvToggleSeat(room,r,c){
+  const occ=rvOcc(_rv.curSess,room);
+  if(occ.has(`${r}|${c}`)){ toast('🔒 This seat is occupied by an exam -- it cannot be used','warn'); return; }
+  const res=rvRes(_rv.curSess,room);
+  if(res.has(`${r}|${c}`)){ toast(`🔒 ${room} Row ${r}, Column ${c} is already utilized (${res.get(`${r}|${c}`)}) -- it cannot be used again`,'warn'); return; }
+  const k=rvSelKey(room,r,c); if(_rv.sel.has(k)) _rv.sel.delete(k); else _rv.sel.add(k);
+  renderRoomViewer();
+}
+function rvSelectAllFree(room){
+  const rm=_rv.rooms.get(room); if(!rm) return;
+  const occ=rvOcc(_rv.curSess,room), res=rvRes(_rv.curSess,room);
+  for(let r=1;r<=rm.rows;r++) for(let c=1;c<=rm.cols;c++){ const k=`${r}|${c}`; if(!occ.has(k)&&!res.has(k)) _rv.sel.add(rvSelKey(room,r,c)); }
+  renderRoomViewer();
+}
+function rvSelByRoom(){ const m=new Map(); _rv.sel.forEach(k=>{ const [room,rc]=k.split('§'); if(!m.has(room)) m.set(room,[]); m.get(room).push(rc); }); return m; }
+function rvReserve(){
+  if(!_rv.sel.size){ toast('Tick one or more vacant seats first','warn'); return; }
+  const label=(document.getElementById('rvLabel')?.value||'').trim();
+  if(!label){ toast('Type who the seats are for (e.g. department / course)','warn'); document.getElementById('rvLabel')?.focus(); return; }
+  const step=[]; let n=0;
+  rvSelByRoom().forEach((keys,room)=>{
+    const res=rvRes(_rv.curSess,room), occ=rvOcc(_rv.curSess,room); const done=[];
+    keys.forEach(k=>{ if(!occ.has(k)&&!res.has(k)){ res.set(k,label); done.push(k); } });
+    const ids=rvLiveIds(room);
+    if(ids) done.forEach(k=>{ const [r,c]=k.split('|').map(Number); roomBookings().push({sessionId:ids.sid, roomId:ids.rid, row:r, col:c, label}); });
+    step.push({room, keys:done}); n+=done.length;
+  });
+  _rv.sel.clear();
+  _rv.history=_rv.history||[]; _rv.history.push({sess:_rv.curSess, rooms:step, label});
+  _rv.lastLabel=label;
+  if(_rv.live){ save(); renderSeating(); }
+  renderRoomViewer();
+  toast(`✅ Class utilized — ${n} seat(s) in ${step.map(x=>x.room).join(', ')} for ${label}. These seats are now locked.`,'ok');
+}
+function rvUndo(){
+  const h=(_rv&&_rv.history)||[]; const last=h.pop();
+  if(!last){ toast('Nothing to undo','warn'); return; }
+  last.rooms.forEach(({room,keys})=>{
+    const res=rvRes(last.sess,room); keys.forEach(k=>res.delete(k));
+    if(_rv.live){ const sid=_rv.sessIdOf.get(last.sess), rid=_rv.roomIdOf.get(room);
+      state.roomBookings=(state.roomBookings||[]).filter(b=>!(b.sessionId===sid && b.roomId===rid && keys.includes(`${b.row}|${b.col}`))); }
+  });
+  if(_rv.live){ save(); renderSeating(); }
+  renderRoomViewer(); toast(`↶ Undone — ${last.rooms.reduce((n,x)=>n+x.keys.length,0)} seat(s) (${last.label}) are vacant again`,'ok');
+}
+function rvToggleAutoFill(room,on){
+  const ids=rvLiveIds(room); if(!ids) return;
+  const key=ids.sid+'|'+ids.rid; const list=autoFillRoomSet();
+  if(on){ if(!list.includes(key)) list.push(key); } else state.autoFillRooms=list.filter(k=>k!==key);
+  save(); renderRoomViewer(); renderSeating();
+  toast(on?`✓ ${room} will be utilized for parked students of this session on every Generate Seating`:`${room} is no longer auto-utilized`,'ok');
+}
+function rvSeatParkedHere(room){
+  const ids=rvLiveIds(room); if(!ids) return;
+  const entries=(state.parkedStudents||[]).filter(p=>p.sessionId===ids.sid);
+  if(!entries.length){ toast('No parked students in this session','warn'); return; }
+  const {ok}=filterTimeClashes(entries, ids.sid); if(!ok.length) return;
+  const res=smartSeatEntries(ids.sid, ok, ids.rid, 1, {noOverflow:true});
+  save(); renderSeating(); rvRefreshLive();
+  reportSmartSeat(res, `Parked students → ${room}`);
+}
+function xlsxRoomReservations(){
+  if(!_rv) return;
+  const rows=[];
+  _rv.reserved.forEach((m,key)=>{ const parts=key.split('|'); const room=parts.pop(); const s=_rv.sessions.get(parts.join('|'));
+    [...m.entries()].sort((a,b)=>{ const [ar,ac]=a[0].split('|').map(Number), [br,bc]=b[0].split('|').map(Number); return ac-bc||ar-br; })
+      .forEach(([k,label])=>{ const [r,c]=k.split('|'); rows.push({'Date':s?s.date:'','Day':s?s.day:'','Session':s?s.label:'','Time':s?s.time:'','Room':room,'Column':+c,'Row':+r,'Seat':`COL-${c} / ROW-${r}`,'Utilized for':label}); }); });
+  if(!rows.length){ toast('No utilized seats yet','warn'); return; }
+  const summary=[]; const g=new Map(); rows.forEach(r=>{ const k=[r.Date,r.Session,r.Room,r['Utilized for']].join('|'); if(!g.has(k)) g.set(k,{...r,cols:new Set(),n:0}); const x=g.get(k); x.cols.add(r.Column); x.n++; });
+  g.forEach(x=>summary.push({'Date':x.Date,'Day':x.Day,'Session':x.Session,'Time':x.Time,'Room':x.Room,'Utilized for':x['Utilized for'],'Seats':x.n,'Columns used':[...x.cols].sort((a,b)=>a-b).join(', ')}));
+  xlsxDownload({'Summary':summary,'Utilized Seats':rows},'room-utilized-seats.xlsx');
+}
+// One room drawn exactly like the Auto Seating blocks (column headers with
+// course / code / teacher, coloured seat cards with course, student, ID).
+function rvRoomBlock(name){
+  const room=_rv.rooms.get(name); if(!room) return '';
+  const occ=rvOcc(_rv.curSess,name), res=rvRes(_rv.curSess,name);
+  const colors=['s1','s2','s3','s4','s5'], colorOf=new Map();
+  const colorFor=code=>{ if(!colorOf.has(code)) colorOf.set(code, colors[colorOf.size%colors.length]); return colorOf.get(code); };
+  const colInfo=c=>{ const cnt=new Map(); let n=0; for(let r=1;r<=room.rows;r++){ const o=occ.get(`${r}|${c}`); if(o){ n++; cnt.set(o.code,(cnt.get(o.code)||0)+1); } }
+    const code=[...cnt.entries()].sort((a,b)=>b[1]-a[1])[0]?.[0]; let o=null; if(code) for(let r=1;r<=room.rows&&!o;r++){ const x=occ.get(`${r}|${c}`); if(x&&x.code===code) o=x; } return {n,o}; };
+  const cols=[...Array(room.cols)].map((_,i)=>i+1);
+  const occCols=cols.filter(c=>colInfo(c).n>0);
+  const vacant=Math.max(0,room.rows*room.cols-occ.size-res.size);
+  const ticked=[..._rv.sel].filter(k=>k.startsWith(name+'§')).length;
+  const ids=_rv.live?rvLiveIds(name):null; const autoOn=ids&&isAutoFillRoom(ids.sid,ids.rid);
+  const np=ids?(state.parkedStudents||[]).filter(p=>p.sessionId===ids.sid).length:0;
+  const legendCodes=[...new Set([...occ.values()].map(o=>o.code))];
+  return `<div class="section-room rv-block">
+    <div class="room-bar">
+      <span class="rb-name">🏫 ${esc(name)}</span>
+      <span class="rb-meta">${room.cols} cols × ${room.rows} rows</span>
+      <span class="rb-fill ${occ.size?'':'is-empty'}"><b>${occ.size}</b> / ${room.rows*room.cols} occupied</span>
+      <span class="rv-legend rv-free">${vacant} vacant</span>${res.size?`<span class="rv-legend rv-res">🔒 ${res.size} utilized</span>`:''}
+      ${autoOn?'<span class="rb-auto">✓ Utilized for parked students</span>':''}
+      <span class="rb-sess">Occupied columns: ${occCols.join(', ')||'none'}</span>${ids?'<span class="rb-sess" style="color:#6d28d9">⇦ drag parked students from the left onto a green seat</span>':''}
+      <button class="btn sm ghost" onclick="rvToggleRoom('${esc(name).replace(/'/g,"\\'")}')" title="Close this room">✕</button>
+    </div>
+    <div class="legend" style="margin-bottom:8px">${legendCodes.map(code=>{ const o=[...occ.values()].find(x=>x.code===code); return `<span class="lg ${colorFor(code)}"><b>${esc(code)}</b>${o&&o.title?' — '+esc(o.title):''}${o&&o.section?' ('+esc(o.section)+')':''}${o&&o.teacher?' · 👤 '+esc(o.teacher):''}</span>`; }).join('')}
+      <span class="lg" style="background:#dcfce7;color:#166534;border:1px dashed #22c55e">vacant — tick to use</span></div>
+    <div class="rv-actions">
+      <button class="btn sm ghost" onclick="rvSelectAllFree('${esc(name).replace(/'/g,"\\'")}')">☑ Tick all vacant${ticked?` (${ticked} ticked)`:''}</button>
+      ${_rv.live?`<label class="rv-autofill ${autoOn?'on':''}"><input type="checkbox" ${autoOn?'checked':''} onchange="rvToggleAutoFill('${esc(name).replace(/'/g,"\\'")}',this.checked)"> <b>${autoOn?'✓ ':''}Utilize this room in Auto Seating</b></label>
+        <button class="btn sm" style="background:#7c3aed;border-color:#7c3aed" ${np?'':'disabled'} onclick="rvSeatParkedHere('${esc(name).replace(/'/g,"\\'")}')" title="Seat this session's parked students in this room now">🪑 Seat ${np} parked student${np===1?'':'s'} here</button>`:''}
+    </div>
+    <div style="overflow-x:auto"><div class="seat-grid" style="grid-template-columns:repeat(${room.cols},minmax(92px,112px));width:max-content">
+      ${cols.map(c=>{ const ci=colInfo(c); return ci.o ? `<div class="seat-col-header ${colorFor(ci.o.code)}"><span style="display:block;font-size:8px;font-weight:700;line-height:1.2">${esc(ci.o.title)}</span>${esc(ci.o.code)} (${ci.n})${ci.o.teacher?`<span style="display:block;font-size:7px;font-weight:500;opacity:.85;line-height:1.2">👤 ${esc(ci.o.teacher)}</span>`:''}</div>`
+                                              : `<div class="seat-col-header" style="background:#f0fdf4;color:#166534;border:1px dashed #86efac">COL-${c} · vacant</div>`; }).join('')}
+      ${[...Array(room.rows)].map((_,ri)=>{ const r=ri+1; return cols.map(c=>{ const k=`${r}|${c}`, o=occ.get(k);
+        if(o) return `<div class="seat ${colorFor(o.code)} rv-locked" title="🔒 Occupied -- ${esc(o.name||'')} ${esc(o.roll||'')} -- ${esc(o.code)}">
+            <span class="seat-course"><b>${esc(o.code)}</b>${o.title?' — '+esc(o.title):''}</span>
+            <span class="seat-student-name">${esc(o.name||'🔒 occupied')}</span>
+            ${o.roll?`<span style="font-family:monospace;font-size:6px">ID: ${esc(o.roll)}</span>`:''}<span class="rv-lock">🔒</span></div>`;
+        if(res.has(k)) return `<div class="seat booked-seat" onclick="rvToggleSeat('${esc(name).replace(/'/g,"\\'")}',${r},${c})" title="Utilized for ${esc(res.get(k))} -- locked">🔒<small>${esc(res.get(k))}</small></div>`;
+        const sel=_rv.sel.has(rvSelKey(name,r,c));
+        const drop=ids?`ondragover="allowSeatDrop(event)" ondragenter="seatDragEnter(event)" ondragleave="seatDragLeave(event)" ondrop="dropSeatStudent(event)" data-drop-session="${ids.sid}" data-drop-room="${ids.rid}" data-drop-row="${r}" data-drop-col="${c}"`:'';
+        return `<div class="seat empty rv-vacant ${sel?'is-sel':''}" ${drop} onclick="rvToggleSeat('${esc(name).replace(/'/g,"\\'")}',${r},${c})" title="Vacant -- R${r} C${c} -- click to tick">${sel?'✓':'+'}</div>`; }).join(''); }).join('')}
+    </div></div>
+  </div>`;
+}
+function renderRoomViewer(){
+  const el=document.getElementById('rvBody'); if(!el) return;
+  if(!_rv){ el.innerHTML='<div class="empty-state" style="padding:12px">No availability loaded yet.</div>'; return; }
+  const sessions=[..._rv.sessions.values()];
+  if(!_rv.curSess || !_rv.sessions.has(_rv.curSess)) _rv.curSess=sessions[0]?.key||null;
+  _rv.curRooms=(_rv.curRooms||[]).filter(n=>_rv.rooms.has(n));
+  const rooms=[..._rv.rooms.entries()].map(([name,r])=>{ const occ=rvOcc(_rv.curSess,name), res=rvRes(_rv.curSess,name); const cap=r.rows*r.cols; return {name,r,cap,occ:occ.size,res:res.size,free:Math.max(0,cap-occ.size-res.size)}; })
+    .sort((a,b)=>a.name.localeCompare(b.name,undefined,{numeric:true}));
+  const totalRes=[..._rv.reserved.values()].reduce((n,m)=>n+m.size,0);
+  const byRoom=rvSelByRoom();
+  const autoOn=name=>{ if(!_rv.live) return false; const sid=_rv.sessIdOf.get(_rv.curSess), rid=_rv.roomIdOf.get(name); return !!(sid&&rid&&isAutoFillRoom(sid,rid)); };
+  el.innerHTML=`<div class="row" style="gap:10px;align-items:flex-end;flex-wrap:wrap">
+      <label style="font-size:11.5px;font-weight:600">Session<br><select onchange="rvPickSession(this.value)" style="min-width:300px">${sessions.map(s=>`<option value="${esc(s.key)}" ${s.key===_rv.curSess?'selected':''}>${esc(s.day)} ${esc(s.date)} · ${esc(s.label)} · ${esc(s.time)}</option>`).join('')}</select></label>
+      <span class="desc">Source: <b>${esc(_rv.source)}</b></span>
+      <button class="btn sm" style="margin-left:auto" onclick="xlsxRoomReservations()">⬇ Download utilized seats (${totalRes})</button>
+    </div>
+    <div class="row" style="gap:8px;align-items:center;margin:8px 0 4px;flex-wrap:wrap"><span class="desc">Click room numbers to open them (several at once):</span>
+      <button class="btn sm ghost" onclick="rvRoomsWithVacancy()">Select all with vacancies</button>${_rv.curRooms.length?`<button class="btn sm ghost" onclick="rvClearRooms()">Clear (${_rv.curRooms.length})</button>`:''}
+      ${(_rv.history||[]).length?`<button class="btn sm ghost" onclick="rvUndo()" title="Reverse the last utilization">↶ Undo last</button>`:''}</div>
+    <div class="rv-rooms">${rooms.map(x=>{ const on=_rv.curRooms.includes(x.name), auto=autoOn(x.name);
+      return `<button type="button" class="rv-room ${on?'is-cur':''} ${x.occ===0&&x.res===0?'is-empty':x.free===0?'is-full':''} ${auto?'is-auto':''}" onclick="rvToggleRoom('${esc(x.name).replace(/'/g,"\\'")}')" title="${auto?'✓ Utilized in Auto Seating for parked students · ':''}${on?'Click to close':'Click to open'}">${on||auto?`<span class="rv-tick">✓</span>`:''}${esc(x.name)}<small>${x.free}/${x.cap} vacant</small></button>`; }).join('')}</div>
+    ${_rv.sel.size?`<div class="rv-utilize" style="margin-top:10px">
+        <span><b>${_rv.sel.size}</b> seat(s) ticked — ${[...byRoom.entries()].map(([room,keys])=>`<b>${esc(room)}</b> col ${[...new Set(keys.map(k=>+k.split('|')[1]))].sort((a,b)=>a-b).join(', ')}`).join(' · ')}</span>
+        <input id="rvLabel" placeholder="For (e.g. EE Dept — Circuits)" value="${esc(_rv.lastLabel||'')}" style="min-width:240px">
+        <button class="btn" style="background:#15803d;border-color:#15803d" onclick="rvReserve()">✅ Utilize the class (${_rv.sel.size} seat${_rv.sel.size===1?'':'s'})</button>
+        <button class="btn sm ghost" onclick="_rv.sel.clear();renderRoomViewer()">Clear ticks</button></div>`:''}
+    ${_rv.live?'':`<div class="desc" style="margin-top:6px">Loaded from a file: to seat parked students or tick rooms for Auto Seating, click <b>Use this timetable</b>.</div>`}
+    ${_rv.curRooms.length?`<div class="rv-blocks">${_rv.curRooms.map(rvRoomBlock).join('')}</div>`:'<div class="desc" style="margin-top:10px">Pick one or more rooms above to see their seats.</div>'}`;
+}
 function emptyClassesHTML(sessList){
   const list=(sessList||[]).length?sessList:[...state.sessions];
+  _emptyLastSess=list;
   if(!list.length) return '';
   const rows=list.map(sess=>{
     const u=roomUsageInSession(sess.id);
@@ -3606,7 +4079,8 @@ function emptyClassesHTML(sessList){
   });
   const totalEmpty=rows.reduce((n,r)=>n+r.empty.length,0);
   return `<details class="card empty-card" ${_emptyOpen?'open':''} ontoggle="_emptyOpen=this.open">
-    <summary><b>🏫 Empty classes</b> <span class="badge" style="background:#dcfce7;color:#166534">${totalEmpty} empty room-slot${totalEmpty===1?'':'s'} across ${rows.length} session${rows.length===1?'':'s'}</span> <span class="desc">Follows the date / session filter above. Click to show.</span></summary>
+    <summary><b>🏫 Empty classes</b> <span class="badge" style="background:#dcfce7;color:#166534">${totalEmpty} empty room-slot${totalEmpty===1?'':'s'} across ${rows.length} session${rows.length===1?'':'s'}</span> <span class="desc">Follows the date / session filter above. Click to show.</span>
+      <button class="btn sm" style="margin-left:6px;background:#15803d;border-color:#15803d" onclick="event.preventDefault();event.stopPropagation();xlsxRoomAvailability()" title="Excel with every room per session: occupied column numbers, fully free columns, free seats + a seat map that other departments can upload in the Room Availability Viewer (end of this page)">⬇ Download Room Availability (Excel)</button></summary>
     <div style="overflow:auto;margin-top:8px"><table><thead><tr><th>Session</th><th>Free seats</th><th>Empty classes (capacity)</th><th>Classes with free seats (free / total)</th></tr></thead><tbody>
     ${rows.map(r=>`<tr><td><b>${esc(r.sess.label)}</b><br>${esc(r.sess.day||dayName(r.sess.date))} ${esc(reportDMY(r.sess.date))}<br>${esc(r.sess.startTime)}-${esc(r.sess.endTime)}</td>
       <td style="text-align:center"><b>${r.free}</b> / ${r.cap}</td>
@@ -3619,6 +4093,7 @@ function seatFilter(){ if(!state.seatFilter||typeof state.seatFilter!=='object')
 function setSeatFilter(k,v){ seatFilter()[k]=v; renderSeating(); }
 function clearSeatFilter(){ state.seatFilter={date:'',period:'',course:'',hideEmpty:false}; renderSeating(); }
 function renderSeating(){
+  setTimeout(()=>{ try{ if(_rv && _rv.live && !_rvSyncing){ _rvSyncing=true; rvLoadCurrent(true); _rvSyncing=false; } }catch(e){ _rvSyncing=false; } },0);
   // Drop park entries whose students are already seated for that course (in
   // any session) or that point at a session the course has left.
   if(typeof reconcileParkedWithSeating==='function') reconcileParkedWithSeating();
@@ -3811,6 +4286,7 @@ function renderSeating(){
 
   v.innerHTML = filterBar + clashPanel + placementSuggestionsHTML() + emptyClassesHTML(shownSess) + shownSess.map(sess => {
     const ss = state.seating.filter(s=>s.sessionId===sess.id);
+    const _booked = bookedSeatsFor(sess.id);
     const parkedForSession = (state.parkedStudents||[]).filter(p=>p.sessionId===sess.id);
     const hasScheduledExam = sessionCourseIdsFor(sess.id).length>0;
     if(!ss.length && !parkedForSession.length && !hasScheduledExam) return '';
@@ -3927,6 +4403,8 @@ function renderSeating(){
             <span class="rb-name">🏫 ${esc(room.name)}</span>
             <span class="rb-meta">${room.cols} cols × ${room.rows} rows${room.isLab?' · 🧪 Lab':''}</span>
             <span class="rb-fill ${seats.length?'':'is-empty'}"><b>${seats.length}</b> / ${room.cols*room.rows} seats${seats.length?'':' · empty'}</span>
+            ${isAutoFillRoom(sess.id,rid)?'<span class="rb-auto" title="Ticked in the Room Availability Viewer: parked students of this session are seated here on Generate Seating">✓ Utilized for parked students</span>':''}
+            ${[..._booked.keys()].some(k=>k.startsWith(rid+'|'))?`<span class="rb-booked">🔒 ${[..._booked.keys()].filter(k=>k.startsWith(rid+'|')).length} booked by other dept</span>`:''}
             <span class="rb-sess">${esc(sessTitle(sess))} · ${esc(reportDMY(sess.date))} · ${esc(sess.startTime)}-${esc(sess.endTime)}</span>
           </div>
           <div class="legend" style="margin-bottom:10px">
@@ -3951,6 +4429,7 @@ function renderSeating(){
               ${Array.from({length:displayRows}).flatMap((_,ri) =>
                  allCols.map(ci => {
                    const dropAttrs = `ondragover="allowSeatDrop(event)" ondragenter="seatDragEnter(event)" ondragleave="seatDragLeave(event)" ondrop="dropSeatStudent(event)" data-drop-session="${sess.id}" data-drop-room="${rid}" data-drop-row="${ri+1}" data-drop-col="${ci}"`;
+                   if(gapCols.has(ci) && _booked.has(`${rid}|${ri+1}|${ci}`)) return `<div class="seat booked-seat" title="Booked by ${esc(_booked.get(`${rid}|${ri+1}|${ci}`))} -- locked">🔒<small>${esc(_booked.get(`${rid}|${ri+1}|${ci}`))}</small></div>`;
                    if(gapCols.has(ci)){
                      // Keep the visual separator, but make every physical cell
                      // a valid manual drop target.
@@ -3959,6 +4438,7 @@ function renderSeating(){
                        title="Empty manual drop slot${ri===0?' / separator column':''}">${ri===0?'|':''}</div>`;
                    }
                   const seat = seats.find(s=>s.row===ri+1 && s.col===ci);
+                   if(!seat && _booked.has(`${rid}|${ri+1}|${ci}`)) return `<div class="seat booked-seat" title="Booked by ${esc(_booked.get(`${rid}|${ri+1}|${ci}`))} (Room Availability Viewer) -- locked">🔒<small>${esc(_booked.get(`${rid}|${ri+1}|${ci}`))}</small></div>`;
                    if(!seat) return `<div class="seat empty manual-drop-slot" ${dropAttrs} style="min-height:42px" title="Empty slot — drop a parked student here">+</div>`;
                   const stu = state.students.find(x=>x.id===seat.studentId);
                   const c = state.courses.find(x=>x.id===seat.courseId);
@@ -4437,6 +4917,7 @@ function assignManualClashSeat(studentId, sessionId, roomId, row, col, preferred
   }
   const existing=state.seating.find(x=>x.sessionId===sessionId&&x.roomId===roomId&&x.row===row&&x.col===col);
   if(existing){toast('That seat is already occupied','warn');return;}
+  if(isSeatBooked(sessionId,roomId,row,col)){ toast(bookedBlockMsg(sessionId,roomId,row,col),'err'); return; }
   const tc=timeClashesFor(studentId, chosen.id, sessionId);
   if(tc.length){ toast(`⛔ Not placed — ${describeTimeClash(studentId,tc)} at this time. Drop ${chosen.code} on a seat in a session at a different time.`,'err'); return; }
   { const nb=sameSubjectNeighbour(sessionId, roomId, row, col, chosen.id); if(nb){ toast(sameSubjectBlockMsg(nb, chosen.id),'err'); return; } }
@@ -4582,6 +5063,17 @@ function ensureScheduled(sessionId, courseId){
   }
   return false;
 }
+/* ===== ROOM BOOKINGS (seats utilized by other departments) =====
+   Made in the Room Availability Viewer while it runs on THIS timetable.
+   Booked seats are locked for exam seating: auto seating, the fill pass,
+   park placement and every manual drop skip them. */
+function roomBookings(){ if(!Array.isArray(state.roomBookings)) state.roomBookings=[]; return state.roomBookings; }
+function bookedSeatsFor(sessId){ const m=new Map(); (state.roomBookings||[]).forEach(b=>{ if(b.sessionId===sessId) m.set(`${b.roomId}|${b.row}|${b.col}`, b.label||'Booked'); }); return m; }
+function isSeatBooked(sessId, roomId, row, col){ return (state.roomBookings||[]).some(b=>b.sessionId===sessId&&b.roomId===roomId&&b.row===row&&b.col===col); }
+function bookedBlockMsg(sessId, roomId, row, col){ const b=(state.roomBookings||[]).find(b=>b.sessionId===sessId&&b.roomId===roomId&&b.row===row&&b.col===col); return `🔒 Row ${row}, Column ${col} is booked by ${b?b.label:'another department'} -- pick another seat`; }
+// Rooms ticked "Utilize this room in Auto Seating" (per session).
+function autoFillRoomSet(){ if(!Array.isArray(state.autoFillRooms)) state.autoFillRooms=[]; return state.autoFillRooms; }
+function isAutoFillRoom(sessId, roomId){ return (state.autoFillRooms||[]).includes(sessId+'|'+roomId); }
 /* ===== Per-student session moves (manual drag across sessions) =====
    Dragging a student into a session where that paper is NOT scheduled is
    allowed. Instead of re-scheduling the whole course there (which would drag
@@ -4752,6 +5244,8 @@ function smartSeatEntries(sessionId, entries, targetRoomId, startCol, opts){
   }
   const usedBefore = new Set();
   state.seating.filter(x=>x.sessionId===sessionId).forEach(x=>{ noteSeat(x.roomId,x.row,x.col,x.courseId); usedBefore.add(x.roomId); });
+  // booked seats (other departments) count as taken; they block no subject
+  bookedSeatsFor(sessionId).forEach((label,k)=>{ const [rid,r,c]=k.split('|'); if(!grid.has(rid)) grid.set(rid,new Map()); const m=grid.get(rid); if(!m.has(+c)) m.set(+c,{rows:new Set(),papers:new Set()}); m.get(+c).rows.add(+r); });
 
   const freeSeatsIn = r => { const m=grid.get(r.id); let used=0; if(m) m.forEach(c=>used+=c.rows.size); return Math.max(0, roomRows(r)*roomCols(r)-used); };
 
@@ -4889,6 +5383,7 @@ function assignParkedStudents(entries, sessionId, roomId, row, col, exactSeat){
     const room=state.rooms.find(r=>r.id===roomId);
     const st=state.students.find(x=>x.id===e.studentId), c=state.courses.find(x=>x.id===e.courseId);
     if(state.seating.some(x=>x.sessionId===sessionId&&x.roomId===roomId&&x.row===row&&x.col===col)){ toast('That seat is already occupied -- drop on an empty seat','warn'); return; }
+    if(isSeatBooked(sessionId,roomId,row,col)){ toast(bookedBlockMsg(sessionId,roomId,row,col),'err'); return; }
     const nb=sameSubjectNeighbour(sessionId, roomId, row, col, e.courseId, e);
     if(nb){ toast(sameSubjectBlockMsg(nb, e.courseId),'err'); return; }
     if(e.sessionId!==sessionId) setStudentSession(e.studentId,e.courseId,sessionId);
@@ -4925,6 +5420,7 @@ function moveSeatedStudentSeat(source, sessionId, roomId, row, col){
   }
   const existing=state.seating.find(x=>x.sessionId===sessionId&&x.roomId===roomId&&x.row===row&&x.col===col);
   if(existing){toast('That slot is already occupied','warn');return;}
+  if(isSeatBooked(sessionId,roomId,row,col)){ toast(bookedBlockMsg(sessionId,roomId,row,col),'err'); return; }
   { const nb=sameSubjectNeighbour(sessionId, roomId, row, col, source.courseId, source); if(nb){ toast(sameSubjectBlockMsg(nb, source.courseId),'err'); return; } }
   const sourceSeat=state.seating.find(x=>x.sessionId===source.sessionId&&x.roomId===source.roomId&&x.row===source.row&&x.col===source.col);
   if(!sourceSeat){toast('That seat is no longer occupied','warn');return;}
@@ -7397,7 +7893,7 @@ const TAB_RENDERERS = {
   students:     [renderCourses, renderStudents, updateStats],
   attendance:   [renderShortAttendance],
   docrequired:  [renderDocRequired],
-  exports:      [renderReportDatePicker, ()=>{ const el=document.getElementById('noticeBoardLayout'); if(el) el.value=state.noticeBoardLayout||'newpage'; const o=document.getElementById('noticeBoardOrder'); if(o) o.value=state.noticeBoardOrder||'date'; const at=document.getElementById('attendanceOrder'); if(at) at.value=state.attendanceOrder||'date'; }],
+  exports:      [renderReportDatePicker, ()=>{ const m=document.getElementById('envMode'); if(m) m.value=state.envelopeMode==='paper'?'paper':'room'; const pp=document.getElementById('envPerPage'); if(pp) pp.value=String([1,2,4].includes(+state.envelopePerPage)?+state.envelopePerPage:2); }, ()=>{ const el=document.getElementById('noticeBoardLayout'); if(el) el.value=state.noticeBoardLayout||'newpage'; const o=document.getElementById('noticeBoardOrder'); if(o) o.value=state.noticeBoardOrder||'date'; const at=document.getElementById('attendanceOrder'); if(at) at.value=state.attendanceOrder||'date'; }],
   deptsummary:  [renderDepartmentSummary],
   invigilation: [renderInvigilation]
 };
@@ -10879,7 +11375,7 @@ render();
 
 /* Every Excel export reports its own failure instead of dying silently. */
 (function guardExcelExports(){
-  ['downloadTemplate','downloadClashSeatingSheet','xlsxShortAttendanceReport','xlsxCourseWiseSeating','xlsxNoticeBoard','xlsxCourseSummary','xlsxFacultySummary','xlsxDepartmentSummary','xlsxAttendanceSheets','xlsxTimetableProgram','xlsxTimetableDay','xlsxStudentPapers','xlsxDaily','xlsxSeatingGrid','xlsxFaculty','xlsxInvigilationFacultyWise','xlsxInvigilation','xlsxExamLoad','xlsxDuplicateEnrollment','xlsxPaperRequirement'].forEach(name=>{
+  ['downloadTemplate','downloadClashSeatingSheet','xlsxShortAttendanceReport','xlsxCourseWiseSeating','xlsxNoticeBoard','xlsxCourseSummary','xlsxFacultySummary','xlsxDepartmentSummary','xlsxAttendanceSheets','xlsxTimetableProgram','xlsxTimetableDay','xlsxStudentPapers','xlsxDaily','xlsxSeatingGrid','xlsxFaculty','xlsxInvigilationFacultyWise','xlsxInvigilation','xlsxExamLoad','xlsxDuplicateEnrollment','xlsxPaperRequirement','xlsxEnvelopeLabels'].forEach(name=>{
     const fn=window[name]; if(typeof fn!=='function' || fn.__guarded) return;
     const fail=e=>{ console.error(name, e); toast(`Excel export failed (${name}): ${e&&e.message?e.message:e}`,'err'); };
     const g=function(...args){
