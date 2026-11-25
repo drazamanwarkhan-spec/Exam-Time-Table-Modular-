@@ -722,6 +722,7 @@ tr:hover{background:#f8fafc}
       <label style="font-size:11px;font-weight:600;color:var(--mut)">Design<br><select class="envStyle" onchange="state.envelopeStyle=this.value;save();syncEnvelopeControls()"><option value="form">DSU envelope form (fields only)</option><option value="label">Classic label</option></select></label>
       <label style="font-size:11px;font-weight:600;color:var(--mut)">One envelope per<br><select class="envModeSel" onchange="state.envelopeMode=this.value;save();syncEnvelopeControls()"><option value="room">Paper per room</option><option value="paper">Paper (all rooms)</option></select></label>
       <label style="font-size:11px;font-weight:600;color:var(--mut)">Per A4 page<br><select class="envPerSel" onchange="state.envelopePerPage=+this.value;save();syncEnvelopeControls()"><option value="1">1 (full page)</option><option value="2">2</option><option value="4">4 (classic only)</option></select></label>
+      <label style="font-size:11px;font-weight:600;color:var(--mut)">Order<br><select class="envOrderSel" onchange="state.envelopeOrder=this.value;save();syncEnvelopeControls()"><option value="teacher">Teacher-wise</option><option value="date">Date-wise</option></select></label>
       <button class="btn" style="background:#0f766e;border-color:#0f766e" onclick="pdfEnvelopeLabels(true)" title="One envelope per question paper -- uses the Department / Program / Teacher / Date filters above">✉️ Paper Envelopes PDF</button>
       <button class="btn" style="background:#b45309;border-color:#b45309" onclick="pdfRoomEnvelopes(true)" title="One envelope per room per session listing every paper in it (Course Title, Instructor, Class & Section, No. of Envelopes)">🏫 Room Envelopes PDF</button>
       <button class="btn ghost" onclick="xlsxEnvelopeLabels(true)">⬇ Paper envelope list</button>
@@ -971,7 +972,8 @@ tr:hover{background:#f8fafc}
         <label style="font-size:11.5px;font-weight:600">Labels per A4 page<br><select id="envPerPage" onchange="state.envelopePerPage=+this.value;save();syncEnvelopeControls()"><option value="1">1 (large)</option><option value="2">2</option><option value="4">4 (strips, classic only)</option></select></label>
         <label style="font-size:11.5px;font-weight:600">Exam<br><select class="examTypeSel" onchange="setExamType(this.value)"><option value="END">END Semester</option><option value="MID">MID Semester</option></select></label>
         <label style="font-size:11.5px;font-weight:600">Design<br><select class="envStyle" onchange="state.envelopeStyle=this.value;save();syncEnvelopeControls()"><option value="form">DSU envelope form (fields only)</option><option value="label">Classic label</option></select></label>
-        <button class="btn" style="background:#0f766e;border-color:#0f766e" onclick="pdfEnvelopeLabels()">⬇ Envelope Labels PDF</button>
+        <label style="font-size:11.5px;font-weight:600">Order<br><select class="envOrderSel" onchange="state.envelopeOrder=this.value;save();syncEnvelopeControls()"><option value="teacher">Teacher-wise</option><option value="date">Date-wise</option></select></label>
+      <button class="btn" style="background:#0f766e;border-color:#0f766e" onclick="pdfEnvelopeLabels()">⬇ Envelope Labels PDF</button>
         <button class="btn ghost" onclick="xlsxEnvelopeLabels()">⬇ Envelope List Excel</button>
         <button class="btn" style="background:#b45309;border-color:#b45309" onclick="pdfRoomEnvelopes()">🏫 Room Envelopes PDF</button>
       </div></div>
@@ -2266,6 +2268,8 @@ function assignColumnsInRoom(strips, room, seatsPerCol, startCol, courseCap){
   let prevSeries = null;
   let capped = false;
   const cap = courseCap || null;
+  const inRoom = new Set();
+  const startedSeries = new Set(strips.filter(s=>s.offset>0).map(s=>s.series));
 
   while(col <= room.cols){
     let remaining = strips.filter(s => s.offset < s.students.length);
@@ -2284,9 +2288,15 @@ function assignColumnsInRoom(strips, room, seatsPerCol, startCol, courseCap){
     // column -- the one-column-gap rule is applied unconditionally, even
     // when only a single course remains and there is nothing else to
     // alternate with.
+    // Keep each subject in as FEW rooms as possible (fewer question-paper
+    // envelopes): inside a room keep alternating the papers already started
+    // here until they are finished, then finish papers already started in an
+    // earlier room, and only then open a new paper (largest first).
+    const left = s => s.students.length - s.offset;
+    const rank = s => (inRoom.has(s.series)?4:0) + (s.offset>0?2:0) + (startedSeries.has(s.series)?1:0);
     let pick = remaining
       .filter(s => s.series !== prevSeries)
-      .sort((a,b) => (b.students.length - b.offset) - (a.students.length - a.offset))[0];
+      .sort((a,b) => (rank(b)-rank(a)) || (left(b) - left(a)))[0];
 
     if(!pick){
       // Every remaining strip belongs to the SAME course as the column we
@@ -2311,6 +2321,7 @@ function assignColumnsInRoom(strips, room, seatsPerCol, startCol, courseCap){
       placed.push({ col, row, studentId: stu.studentId, courseId: stu.courseId });
     }
     prevSeries = pick.series;
+    inRoom.add(pick.series); startedSeries.add(pick.series);
     col++;
   }
   return { placed, nextCol: col, capped };
@@ -3391,6 +3402,7 @@ function paperRowCells(p){
 function syncEnvelopeControls(){
   const set=(sel,v)=>document.querySelectorAll(sel).forEach(el=>{ if(el.value!==v) el.value=v; });
   syncExamTypeControls(); set('.envStyle', state.envelopeStyle==='label'?'label':'form');
+  set('.envOrderSel', envelopeOrder());
   set('.envModeSel, #envMode', state.envelopeMode==='paper'?'paper':'room');
   set('.envPerSel, #envPerPage', String([1,2,4].includes(+state.envelopePerPage)?+state.envelopePerPage:2));
 }
@@ -3493,6 +3505,28 @@ function pdfPaperRequirement(){
    per room (what is handed to each room's invigilator). mode 'paper': one
    envelope per paper (same course name + same teacher, one session) with all
    its rooms. Counts come from the seating plan (enrolment when no seating). */
+// "Class & Section" on envelopes: only the class/section name (e.g. BSCS-3A),
+// never the full program name.
+function programShortName(p){
+  const s=String(p||'').replace(/\s+/g,' ').trim(); if(!s) return '';
+  if(!/\s/.test(s) && s.length<=14) return s.toUpperCase();          // already short: BSCS, BBA, BS-CS
+  const dept=deptShortCode(s);
+  if(/business\s+administration/i.test(s)) return /master|^m/i.test(s)?'MBA':'BBA';
+  const deg=/^(bachelor|bs\b|b\.s)/i.test(s)?'BS':/^(master|ms\b|m\.s)/i.test(s)?'MS':/^(ph\.?d|doctor)/i.test(s)?'PhD':/^be\b|engineering/i.test(s)?'BE':'';
+  if(dept) return (deg&&!dept.startsWith(deg)?deg:'')+dept;
+  return s.split(' ').filter(w=>/^[A-Z]/.test(w)&&!/^(Of|In|And|The)$/i.test(w)).map(w=>w[0]).join('').toUpperCase()||s;
+}
+// "Class & Section" = short class name + section, e.g. "BSCS-3A" (never the full program name)
+function classSectionLabel(c){
+  const sec=String(c.section||c.className||'').trim();
+  const cls=programShortName(c.program);
+  if(!sec) return cls;
+  if(!cls) return sec;
+  if((sec.match(/[A-Za-z]/g)||[]).length>=3) return sec;              // section already names the class (BSCS-3A)
+  const norm=x=>x.toUpperCase().replace(/[^A-Z0-9]/g,'');
+  return norm(sec).startsWith(norm(cls))||norm(sec).includes(norm(cls)) ? sec : `${cls}-${sec}`;
+}
+function envelopeOrder(){ return state.envelopeOrder==='date'?'date':'teacher'; }
 function envelopeData(mode, opts){
   mode = mode==='paper' ? 'paper' : 'room'; opts=opts||{};
   const F=opts.fromTab?paperReqFilter():{};
@@ -3515,13 +3549,18 @@ function envelopeData(mode, opts){
         const list = mine.length ? mine.map(x=>({sid:x.studentId, room:state.rooms.find(r=>r.id===x.roomId)?.name||''}))
                                  : studentsOfInSession(cid,sess.id).map(sid=>({sid, room:''}));
         list.forEach(x=>{
-          const paperKey=paperRootOf(cid)+'|'+String(c.faculty||'').toLowerCase().trim();
+          // teacher-wise: a course listing two teachers gets one envelope per teacher
+          const teachers=String(c.faculty||'').trim()?splitTeachers(c.faculty):[''];
+          teachers.forEach(t=>{
+          if(tT && t.toLowerCase()!==tT.toLowerCase()) return;
+          const paperKey=paperRootOf(cid)+'|'+t.toLowerCase().trim();
           const key = mode==='room' ? `${sess.id}|${x.room}|${paperKey}` : `${sess.id}|${paperKey}`;
-          if(!env.has(key)) env.set(key,{sess, roman:romanMap[sess.id]||romanNum(sessionPeriodIndex(sess)), codes:new Set(), title:c.title||c.code, classes:new Set(), classLabels:new Set(), depts:new Set(), faculty:c.faculty||'', rooms:new Map(), rolls:[]});
+          if(!env.has(key)) env.set(key,{sess, roman:romanMap[sess.id]||romanNum(sessionPeriodIndex(sess)), codes:new Set(), title:c.title||c.code, classes:new Set(), classLabels:new Set(), depts:new Set(), faculty:t, rooms:new Map(), rolls:[]});
           const e=env.get(key);
-          e.codes.add(c.code); e.classes.add(c.section||c.program||''); e.classLabels.add([c.program,c.section].filter(Boolean).join('-')); e.depts.add(courseDepartmentName(c));
+          e.codes.add(c.code); e.classes.add(c.section||c.program||''); e.classLabels.add(classSectionLabel(c)); e.depts.add(courseDepartmentName(c));
           e.rooms.set(x.room,(e.rooms.get(x.room)||0)+1);
           const st=stuById.get(x.sid); e.rolls.push(String(st?st.rollNo:x.sid));
+          });
         });
       });
     });
@@ -3532,8 +3571,10 @@ function envelopeData(mode, opts){
       roomText:[...e.rooms.entries()].filter(([r])=>r).map(([r,k])=>mode==='room'?r:`${r} (${k})`).join(', ') || 'To be assigned',
       rollRange: n ? (n>1?`${e.rolls[0]} – ${e.rolls[n-1]}`:e.rolls[0]) : ''};
   });
-  out.sort((a,b)=>(a.sess.date||'').localeCompare(b.sess.date||'')||(a.sess.startTime||'').localeCompare(b.sess.startTime||'')||
-    String(a.roomText).localeCompare(String(b.roomText),undefined,{numeric:true})||String(a.title).localeCompare(String(b.title)));
+  const byDate=(a,b)=>(a.sess.date||'').localeCompare(b.sess.date||'')||(a.sess.startTime||'').localeCompare(b.sess.startTime||'')||
+    String(a.roomText).localeCompare(String(b.roomText),undefined,{numeric:true})||String(a.title).localeCompare(String(b.title));
+  // teacher-wise (default): all envelopes of one teacher together, by date
+  out.sort((a,b)=>(envelopeOrder()==='teacher' ? String(a.faculty||'~').localeCompare(String(b.faculty||'~')) : 0) || byDate(a,b));
   return out;
 }
 function drawEnvelopeLabel(doc, x, y, w, h, e, idx, total, mode){
@@ -3655,9 +3696,12 @@ function drawRoomEnvelopeForm(doc, x, y, w, h, e, idx, total){
     if(ci===0){ doc.line(X(c.x+numW),Y(ty),X(c.x+numW),Y(ty+rh*nR)); for(let i=0;i<nR;i++){ doc.setTextColor(...LC).setFont('helvetica','normal').setFontSize(F(10)); doc.text(String((e.part-1)*8+i+1),X(c.x+numW/2),Y(ty+i*rh+rh/2+3.5),{align:'center'}); } } });
   e.rows.forEach((p,i)=>{ const yy=ty+i*rh+rh/2+4;
     doc.setTextColor(...INK).setFont('helvetica','bold');
-    const t1=`${p.title} (${[...p.codes].join('/')}) — ${p.students}`; fit(t1, cols[0].w-numW-8, 11); doc.text(t1, X(cols[0].x+numW+4), Y(yy));
-    const t2=p.faculty||''; fit(t2, cols[1].w-8, 11); doc.text(t2, X(cols[1].x+4), Y(yy));
-    const t3=[...(p.classLabels||p.classes)].filter(Boolean).join(', '); fit(t3, cols[2].w-8, 11); doc.text(t3, X(cols[2].x+4), Y(yy)); });
+    const t1=String(p.title||''); fit(t1, cols[0].w-numW-8, 12.5); doc.text(t1, X(cols[0].x+numW+4), Y(yy));
+    const t2=String(p.faculty||'—'); doc.setFontSize(F(12.5)); let f2=12.5; while(f2>10 && doc.getTextWidth(t2)>F(cols[1].w-8)){ f2-=.5; doc.setFontSize(F(f2)); }
+    if(doc.getTextWidth(t2)<=F(cols[1].w-8)) doc.text(t2, X(cols[1].x+4), Y(yy));
+    else { doc.setFontSize(F(9.5)); const ls=doc.splitTextToSize(t2,F(cols[1].w-8)).slice(0,2); doc.text(ls[0],X(cols[1].x+4),Y(yy-5.5)); if(ls[1]) doc.text(ls[1],X(cols[1].x+4),Y(yy+5.5)); }
+    doc.setFont('helvetica','bold');
+    const t3=[...(p.classLabels||p.classes)].filter(Boolean).join(', '); fit(t3, cols[2].w-8, 13); doc.text(t3, X(cols[2].x+4), Y(yy)); });
   // bottom
   const by=ty+rh*nR;
   field('No. of Envelopes :',10,250,by+34, `${e.papers.length}${e.parts>1?`  (form ${e.part} of ${e.parts})`:''}   ·   ${e.students} students`, 13);
@@ -3695,10 +3739,18 @@ function drawEnvelopeForm(doc, x, y, w, h, e, idx, total, mode){
   const RED=[170,52,40], INK=[0,0,0];
   const lbl=(t,px,py,size,opts)=>{ doc.setTextColor(...RED).setFont('helvetica',(opts&&opts.bold)?'bold':'normal').setFontSize(F(size||11)); doc.text(t,X(px),Y(py)); return px+doc.getTextWidth(t)/s; };
   const line=(x1,x2,py)=>{ doc.setDrawColor(...RED).setLineWidth(F(.7)); doc.line(X(x1),Y(py+2),X(x2),Y(py+2)); };
-  const val=(t,x1,x2,py,size)=>{ if(t==null||t==='') return; let fs=size||11.5; doc.setTextColor(...INK).setFont('helvetica','bold');
+  const val=(t,x1,x2,py,size)=>{ if(t==null||t==='') return; let fs=size||15; doc.setTextColor(...INK).setFont('helvetica','bold');
     const maxW=F(x2-x1-6); doc.setFontSize(F(fs)); while(fs>6 && doc.getTextWidth(String(t))>maxW){ fs-=.5; doc.setFontSize(F(fs)); }
     doc.text(String(t),X(x1+4),Y(py-1)); };
-  const field=(label,lx,lineEnd,py,value,size)=>{ const ex=lbl(label,lx,py,size); line(ex+4,lineEnd,py); val(value,ex+4,lineEnd,py); return ex; };
+  const field=(label,lx,lineEnd,py,value,size)=>{ const ex=lbl(label,lx,py,size||14.5); line(ex+4,lineEnd,py); val(value,ex+4,lineEnd,py,size?size+3:18); return ex; };
+  // full name, never shrunk to unreadable: wraps onto two lines when long
+  const nameField=(label,lx,lineEnd,py,value)=>{ const ex=lbl(label,lx,py,14.5); line(ex+4,lineEnd,py);
+    const t=String(value||'').trim(); if(!t) return ex; const w=lineEnd-ex-10;
+    doc.setTextColor(...INK).setFont('helvetica','bold'); let fs=18; doc.setFontSize(F(fs));
+    while(fs>13 && doc.getTextWidth(t)>F(w)){ fs-=.5; doc.setFontSize(F(fs)); }
+    if(doc.getTextWidth(t)<=F(w)){ doc.text(t,X(ex+8),Y(py-1)); return ex; }
+    fs=13; doc.setFontSize(F(fs)); const lines=doc.splitTextToSize(t,F(w)).slice(0,2);
+    doc.text(lines[0],X(ex+8),Y(py-15)); if(lines[1]) doc.text(lines[1],X(ex+8),Y(py-1)); return ex; };
   const box=(bx,by,bw,bh,lw)=>{ doc.setDrawColor(...RED).setLineWidth(F(lw||.9)); doc.rect(X(bx),Y(by),F(bw),F(bh)); };
   const tick=(bx,by,sz)=>{ doc.setDrawColor(...INK).setLineWidth(F(2.2)); doc.line(X(bx+sz*.18),Y(by+sz*.55),X(bx+sz*.42),Y(by+sz*.82)); doc.line(X(bx+sz*.42),Y(by+sz*.82),X(bx+sz*.88),Y(by+sz*.15)); };
   const ul=(t,px,py,size)=>{ const ex=lbl(t,px,py,size,{bold:true}); doc.setDrawColor(...RED).setLineWidth(F(.7)); doc.line(X(px),Y(py+2),X(ex),Y(py+2)); };
@@ -3711,58 +3763,58 @@ function drawEnvelopeForm(doc, x, y, w, h, e, idx, total, mode){
   const exType=envelopeExamType();
   const sem=String(state.reportSemester || semesterFromDate(e.sess.date) || 'Fall').toLowerCase();
   const yr=String(state.reportYear || yearFromDate(e.sess.date) || new Date().getFullYear());
-  let cx=14; const r1=40, bs=17;
-  const cb=(label,on)=>{ box(cx,r1-bs+3,bs,bs); if(on) tick(cx,r1-bs+3,bs); cx=lbl(label,cx+bs+4,r1,11.5,{bold:true})+14; };
+  let cx=8; const r1=42, bs=18;
+  const cb=(label,on)=>{ box(cx,r1-bs+3,bs,bs); if(on) tick(cx,r1-bs+3,bs); cx=lbl(label,cx+bs+4,r1,12.5,{bold:true})+11; };
   cb('MID Semester Examinations', exType==='MID');
   cb('END Semester Examinations', exType==='END');
   cb('Spring', /spring/.test(sem)); cb('Summer', /summer/.test(sem));
   box(cx,r1-bs+3,bs,bs); if(/fall/.test(sem)) tick(cx,r1-bs+3,bs);
-  const fx=lbl('Fall - 20',cx+bs+4,r1,11.5,{bold:true}); line(fx,Math.max(fx+30,RW-10),r1); val(/fall/.test(sem)?yr.slice(-2):'',fx,Math.max(fx+30,RW-10),r1,12);
+  const fx=lbl('Fall - 20',cx+bs+4,r1,12.5,{bold:true}); line(fx,Math.max(fx+26,RW-4),r1); val(/fall/.test(sem)?yr.slice(-2):'',fx,Math.max(fx+26,RW-4),r1,14);
   if(!/fall/.test(sem)){ /* year still shown for Spring / Summer */ doc.setTextColor(...INK).setFont('helvetica','bold').setFontSize(F(10)); doc.text(yr, X(RW-10), Y(r1-16), {align:'right'}); }
 
   // 2) date / session / room
   const r2=86;
-  field('Date of Examination:',14,285,r2, `${reportDMY(e.sess.date)} (${(e.sess.day||dayName(e.sess.date)).slice(0,3)})`);
-  let sx=lbl('Session:',310,r2,11.5)+8;
-  ['I','II','III','IV'].forEach(rn=>{ const bw=34, bh=26, by=r2-19; box(sx,by,bw,bh,1.1);
+  field('Date of Examination:',8,348,r2, `${reportDMY(e.sess.date)} (${(e.sess.day||dayName(e.sess.date)).slice(0,3)})`);
+  let sx=lbl('Session:',356,r2,14)+6;
+  ['I','II','III','IV'].forEach(rn=>{ const bw=31, bh=26, by=r2-19; box(sx,by,bw,bh,1.1);
     const on=String(e.roman)===rn;
     if(on){ doc.setFillColor(255,236,200); doc.rect(X(sx+1),Y(by+1),F(bw-2),F(bh-2),'F'); }
     doc.setTextColor(...(on?INK:RED)).setFont('times','bold').setFontSize(F(on?15:13)); doc.text(rn, X(sx+bw/2), Y(by+bh/2+5), {align:'center'});
     if(on){ doc.setDrawColor(...INK).setLineWidth(F(1.6)); doc.ellipse(X(sx+bw/2),Y(by+bh/2),F(bw/2-1),F(bh/2-1)); }
-    sx+=bw+3; });
-  field('Room No.',sx+12,RW-10,r2, mode==='room'?e.roomText:e.roomText);
+    sx+=bw+2; });
+  field('Room No.',sx+10,RW-4,r2, e.roomText);
 
   // 3) left column fields
   const L2=468;
-  field('Course Title:',14,L2,138, `${e.title}${e.codes.size?' ('+[...e.codes].join(' / ')+')':''}`);
-  field('Name of Course Instructor:',14,L2,174, e.faculty);
+  field('Course Title:',14,L2,138, e.title);
+  nameField('Name of Course Instructor:',14,L2,174, e.faculty||'—');
   field('Class & Section:',14,L2,210, [...(e.classLabels||e.classes)].filter(Boolean).join(', '));
   field('No. of Pages of Question Paper:',14,L2,246, '');
   field('No. of Copies of Question Paper',14,L2,282, `${e.copies}${e.copies!==e.students?`  (${e.students} students + spare)`:`  (${e.students} students)`}`);
 
   // 4) TIME FOR / INSTRUCTIONS box
   box(495,112,255,190);
-  ul('TIME FOR',505,132,11.5);
-  field('Objective Part:',505,742,162,'' ,10.5);
-  field('Subjective Part:',505,742,192,'',10.5);
-  ul('INSTRUCTIONS (IF ANY):',505,222,11);
+  ul('TIME FOR',505,132,13);
+  field('Objective Part:',505,742,162,'' ,13);
+  field('Subjective Part:',505,742,192,'',13);
+  ul('INSTRUCTIONS (IF ANY):',505,222,12.5);
   [248,272,296].forEach(py=>line(505,742,py-4));
 
   // 5) certification
-  doc.setTextColor(...RED).setFont('helvetica','normal').setFontSize(F(11));
+  doc.setTextColor(...RED).setFont('helvetica','normal').setFontSize(F(13.5));
   doc.text('It is certified that Question Paper has been vetted and moderated', X(14), Y(330));
   doc.text('by the respective HOD.', X(14), Y(348));
 
   // 6) paper setter + HOD box
   field("Paper Setter's Signature:",14,440,382,'');
-  field('Name:',14,440,412, '');
-  const dx=field('Department:',14,265,442, [...(e.depts||[])].filter(Boolean).join(', '),10.5);
+  nameField('Name:',14,440,412, e.faculty||'');
+  const dx=field('Department:',14,265,442, [...(e.depts||[])].filter(Boolean).join(', '),13);
   field('Date:',280,440,442,'');
   box(495,350,255,98);
-  ul('Countersigned by HOD',505,370,11);
-  field('Signature:',505,742,396,'',10.5);
-  field('Name:',505,742,420,'',10.5);
-  field('Date:',505,742,443,'',10.5);
+  ul('Countersigned by HOD',505,370,12.5);
+  field('Signature:',505,742,396,'',13);
+  field('Name:',505,742,420,'',13);
+  field('Date:',505,742,443,'',13);
   doc.setTextColor(0,0,0); doc.setDrawColor(0,0,0);
 }
 function pdfEnvelopeLabels(fromTab){
