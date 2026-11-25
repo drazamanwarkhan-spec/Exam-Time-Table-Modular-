@@ -148,7 +148,7 @@ tr:hover{background:#f8fafc}
 .park-student-card .park-meta{font-size:10px;color:var(--mut);margin-top:2px}
 .park-empty{border:1px dashed #c4b5fd;border-radius:5px;color:#7c3aed;padding:8px;width:100%;font-size:10.5px;text-align:center}
 .manual-drop-slot{cursor:copy}
-.seat-col-header{font-size:9px;font-weight:700;text-align:center;padding:5px 2px;border:1px dashed var(--brd2);border-radius:4px;background:#f8fafc;color:var(--mut);cursor:grab;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;user-select:none}
+.seat-col-header{font-size:9px;font-weight:700;text-align:center;padding:5px 2px;border:1px dashed var(--brd2);border-radius:4px;background:#f8fafc;color:var(--mut);cursor:grab;white-space:normal;overflow-wrap:anywhere;line-height:1.2;user-select:none}
 .seat-col-header:active{cursor:grabbing}
 .seat-col-header.drop-ready{outline:2px dashed var(--pri);background:#eff6ff;color:var(--pri)}
 .seat-col-header.s1{background:#dbeafe;color:#1e3a8a;border-style:solid}
@@ -338,6 +338,19 @@ tr:hover{background:#f8fafc}
 .seat.rv-vacant{background:#dcfce7 !important;border:1px dashed #22c55e !important;color:#166534;cursor:pointer;font-weight:700;display:flex;align-items:center;justify-content:center}
 .seat.rv-vacant:hover{background:#bbf7d0 !important}
 .seat.rv-vacant.is-sel{background:#16a34a !important;color:#fff;border-style:solid !important}
+.seat-edit{position:absolute;top:1px;right:2px;font-size:9px;line-height:1;color:#475569;cursor:pointer;opacity:0;transition:opacity .12s;z-index:3;padding:1px}
+.seat:hover .seat-edit{opacity:.9}.seat-edit:hover{color:#7c3aed;opacity:1}
+#seatEditor{position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:9999;display:flex;align-items:center;justify-content:center}
+#seatEditor .se-box{background:#fff;border-radius:10px;box-shadow:0 12px 40px rgba(0,0,0,.3);width:min(520px,94vw);padding:16px 18px;max-height:92vh;overflow:auto}
+#seatEditor h4{margin:0 0 2px;font-size:15px}#seatEditor .se-sub{font-size:11.5px;color:#64748b;margin-bottom:10px}
+#seatEditor .se-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px 12px}
+#seatEditor label{font-size:11px;font-weight:600;color:#475569;display:flex;flex-direction:column;gap:3px}
+#seatEditor label.full{grid-column:1/-1}
+#seatEditor input,#seatEditor select{padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:12.5px}
+#seatEditor .se-note{font-size:11px;color:#7c3aed;margin-top:8px;min-height:14px}
+#seatEditor .se-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:12px;flex-wrap:wrap}
+.sync-strip{margin-top:8px;font-size:11.5px;border-radius:6px;padding:6px 9px}
+.sync-strip.ok{background:#ecfdf5;border:1px solid #86efac;color:#166534}.sync-strip.warn{background:#fff7ed;border:1px solid #fdba74;color:#9a3412}
 </style>
 </head>
 <body>
@@ -457,7 +470,8 @@ tr:hover{background:#f8fafc}
     <h3>Report Header (used on Seating Plan / Attendance exports)</h3>
     <div class="row" style="flex-wrap:wrap">
       <label>University:</label><input id="uniName" value="DHA SUFFA UNIVERSITY" style="width:240px" onchange="state.uniName=this.value;save()">
-      <label>Exam Title:</label><input id="examTitle" value="END SEMESTER EXAMINATIONS" style="width:340px" onchange="state.examTitle=this.value;save()">
+      <label>Examination:</label><select class="examTypeSel" onchange="setExamType(this.value)" style="min-width:260px;font-weight:600"><option value="END">END Semester (Final-term) Examinations</option><option value="MID">MID Semester (Mid-term) Examinations</option></select>
+      <label>Exam Title:</label><input id="examTitle" value="END SEMESTER EXAMINATIONS" style="width:380px;background:#f8fafc" readonly title="Built from the Examination type + semester + year; printed on every report and envelope">
       <label>Department:</label><input id="departmentName" value="Department of Management Sciences" style="width:300px" onchange="state.departmentName=this.value;save()">
     </div>
     <div class="desc">These two lines are printed at the top of the Course-wise Seating Plan and Room Attendance Sheet exports, exactly as on the official DSU format.</div>
@@ -700,8 +714,18 @@ tr:hover{background:#f8fafc}
         <label style="font-size:11px;font-weight:600;color:var(--mut)">Search<br><input id="prSearch" placeholder="Teacher / subject / code" oninput="renderPaperRequirement()" style="width:170px"></label>
         <button class="btn" onclick="xlsxPaperRequirement()">⬇ Excel</button>
         <button class="btn ghost" onclick="pdfPaperRequirement()">⬇ PDF</button>
-        <button class="btn" style="background:#0f766e;border-color:#0f766e" onclick="pdfEnvelopeLabels()" title="Printable labels for question-paper envelopes (settings in Reports)">✉️ Envelope Labels</button>
       </div>
+    </div>
+    <div class="row env-opts" style="gap:10px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;padding-top:10px;border-top:1px dashed #c4b5fd">
+      <b style="color:#0f766e;align-self:center">✉️ Question-paper envelopes</b>
+      <label style="font-size:11px;font-weight:600;color:var(--mut)">Exam<br><select class="examTypeSel" onchange="setExamType(this.value)"><option value="END">END Semester</option><option value="MID">MID Semester</option></select></label>
+      <label style="font-size:11px;font-weight:600;color:var(--mut)">Design<br><select class="envStyle" onchange="state.envelopeStyle=this.value;save();syncEnvelopeControls()"><option value="form">DSU envelope form (fields only)</option><option value="label">Classic label</option></select></label>
+      <label style="font-size:11px;font-weight:600;color:var(--mut)">One envelope per<br><select class="envModeSel" onchange="state.envelopeMode=this.value;save();syncEnvelopeControls()"><option value="room">Paper per room</option><option value="paper">Paper (all rooms)</option></select></label>
+      <label style="font-size:11px;font-weight:600;color:var(--mut)">Per A4 page<br><select class="envPerSel" onchange="state.envelopePerPage=+this.value;save();syncEnvelopeControls()"><option value="1">1 (full page)</option><option value="2">2</option><option value="4">4 (classic only)</option></select></label>
+      <button class="btn" style="background:#0f766e;border-color:#0f766e" onclick="pdfEnvelopeLabels(true)" title="One envelope per question paper -- uses the Department / Program / Teacher / Date filters above">✉️ Paper Envelopes PDF</button>
+      <button class="btn" style="background:#b45309;border-color:#b45309" onclick="pdfRoomEnvelopes(true)" title="One envelope per room per session listing every paper in it (Course Title, Instructor, Class & Section, No. of Envelopes)">🏫 Room Envelopes PDF</button>
+      <button class="btn ghost" onclick="xlsxEnvelopeLabels(true)">⬇ Paper envelope list</button>
+      <button class="btn ghost" onclick="xlsxRoomEnvelopes(true)">⬇ Room envelope list</button>
     </div>
   </div>
   <div id="paperReqView"></div>
@@ -883,6 +907,7 @@ tr:hover{background:#f8fafc}
       <div class="desc">Select the year, semester and department before generating the <b>Course Summary</b>, <b>Faculty Summary</b> or <b>Department Summary</b>. These values are printed at the top of every PDF and Excel report. The date range also controls which exam data is included.</div>
       <div class="row" style="margin-top:10px;gap:12px;flex-wrap:wrap;align-items:end">
         <label><b>Year:</b><br><input id="summaryYear" type="number" placeholder="e.g. 2026" style="min-width:100px" onchange="setSummaryReportControl('year',this.value)"></label>
+        <label><b>Examination:</b><br><select class="examTypeSel" onchange="setExamType(this.value)" style="min-width:230px"><option value="END">END Semester (Final-term) Examinations</option><option value="MID">MID Semester (Mid-term) Examinations</option></select></label>
         <label><b>Semester:</b><br><select id="summarySemester" onchange="setSummaryReportControl('semester',this.value)" style="min-width:150px"><option value="Fall">Fall</option><option value="Spring">Spring</option><option value="Summer">Summer</option></select></label>
         <label><b>Department:</b><br><select id="summaryDepartment" onchange="setSummaryReportControl('department',this.value)" style="min-width:230px"></select></label>
         <label><b>Calendar / Report Date:</b><br><input id="summaryCalendarDate" type="date" onchange="setSummaryReportControl('calendarDate',this.value)" style="min-width:155px"></label>
@@ -942,11 +967,15 @@ tr:hover{background:#f8fafc}
     <div class="card"><h3>Seating Plan (room grid)</h3><div class="desc">Room-by-room seat layout for each session, laid out as a row/column grid. Each seat shows roll no, name and course code + course name. Choose <b>📑 Excel sheets → Day-wise</b> above (or in Auto Seating) for one worksheet per date.</div><div class="row"><button class="btn" onclick="xlsxSeatingGrid()">⬇ Excel</button><button class="btn ghost" onclick="pdfSeating()">⬇ PDF</button></div></div>
     <div class="card" style="border:1.5px solid #0f766e"><h3>✉️ Envelope Labels (question papers)</h3><div class="desc">Printable labels to paste on question-paper envelopes: university, exam, <b>course code &amp; name</b>, class(es), teacher, <b>date, day, session, time, room</b>, roll-number range and a big <b>No. of Papers</b> box (+ spare % from Teacher Paper Requirement), with Received / Returned signature lines. Uses the 📅 Report dates above. Sorted date → session → room for easy distribution.</div>
       <div class="row" style="gap:10px;align-items:flex-end;flex-wrap:wrap;margin-top:6px">
-        <label style="font-size:11.5px;font-weight:600">Envelope per<br><select id="envMode" onchange="state.envelopeMode=this.value;save()"><option value="room">Room (one envelope per paper per room)</option><option value="paper">Paper (one envelope per paper, all rooms)</option></select></label>
-        <label style="font-size:11.5px;font-weight:600">Labels per A4 page<br><select id="envPerPage" onchange="state.envelopePerPage=+this.value;save()"><option value="1">1 (large)</option><option value="2">2</option><option value="4">4 (strips)</option></select></label>
+        <label style="font-size:11.5px;font-weight:600">Envelope per<br><select id="envMode" onchange="state.envelopeMode=this.value;save();syncEnvelopeControls()"><option value="room">Room (one envelope per paper per room)</option><option value="paper">Paper (one envelope per paper, all rooms)</option></select></label>
+        <label style="font-size:11.5px;font-weight:600">Labels per A4 page<br><select id="envPerPage" onchange="state.envelopePerPage=+this.value;save();syncEnvelopeControls()"><option value="1">1 (large)</option><option value="2">2</option><option value="4">4 (strips, classic only)</option></select></label>
+        <label style="font-size:11.5px;font-weight:600">Exam<br><select class="examTypeSel" onchange="setExamType(this.value)"><option value="END">END Semester</option><option value="MID">MID Semester</option></select></label>
+        <label style="font-size:11.5px;font-weight:600">Design<br><select class="envStyle" onchange="state.envelopeStyle=this.value;save();syncEnvelopeControls()"><option value="form">DSU envelope form (fields only)</option><option value="label">Classic label</option></select></label>
         <button class="btn" style="background:#0f766e;border-color:#0f766e" onclick="pdfEnvelopeLabels()">⬇ Envelope Labels PDF</button>
         <button class="btn ghost" onclick="xlsxEnvelopeLabels()">⬇ Envelope List Excel</button>
+        <button class="btn" style="background:#b45309;border-color:#b45309" onclick="pdfRoomEnvelopes()">🏫 Room Envelopes PDF</button>
       </div></div>
+    <div class="card" style="border:1.5px solid #1e3a8a"><h3>🗓️ Date-wise Room Summary (Department × Date)</h3><div class="desc">The DSU sheet "DATE WISE ROOM SUMMARY OF MID / END SEMESTER EXAMINATIONS": one page per session (e.g. <b>SESSION - I (0900 TO 1030 HRS)</b>), a <b>Department</b> column and one column per exam date with the day, listing every room each department uses. Departments with other exam days (e.g. MBA &amp; MS on the weekend) get their own block below. Built from the live seating plan; uses the 📅 Report dates above.</div><div id="drsControls"></div><div class="row"><button class="btn" onclick="xlsxDateRoomSummary()">⬇ Excel</button><button class="btn ghost" onclick="pdfDateRoomSummary()">⬇ PDF</button></div></div>
     <div class="card" style="border:1.5px solid #7c3aed"><h3>📝 Teacher Paper Requirement</h3><div class="desc">How many papers each teacher must prepare, with date, day, session, subject name, classes, students and copies to print. Uses the 📅 Report dates above. Open the <b>📝 Teacher Paper Requirement</b> tab to view and filter on screen.</div><div class="row"><button class="btn" onclick="xlsxPaperRequirement()">⬇ Excel</button><button class="btn ghost" onclick="pdfPaperRequirement()">⬇ PDF</button><button class="btn ghost" onclick="document.querySelector('.tab[data-tab=&quot;paperreq&quot;]').click()">👁 Open tab</button></div></div>
     <div class="card"><h3>Faculty Courses</h3><div class="desc">One page per faculty member: every course they teach with exam date, day, session, time and the room(s) where it is held (from the current seating plan).</div><div class="row"><button class="btn" onclick="xlsxFaculty()">⬇ Excel</button><button class="btn ghost" onclick="pdfFaculty()">⬇ PDF</button></div></div>
   </div>
@@ -1602,6 +1631,7 @@ function renderSessions(){
   if(document.getElementById('examEndDate')) document.getElementById('examEndDate').value = state.examEndDate;
   if(document.getElementById('uniName')) document.getElementById('uniName').value = state.uniName||'DHA SUFFA UNIVERSITY';
   if(document.getElementById('examTitle')) document.getElementById('examTitle').value = reportExamTitle();
+  syncExamTypeControls();
   document.getElementById('sessionsBody').innerHTML = state.sessions.map(s => `
     <tr>
       <td><input value="${esc(s.label)}" onchange="updSess('${s.id}','label',this.value)" style="width:140px"></td>
@@ -2678,7 +2708,7 @@ function runSeating(onlyGrouped){
     const c = state.courses.find(x=>x.id===o.courseId);
     const sess = state.sessions.find(x=>x.id===o.sessionId);
     const room = state.rooms.find(x=>x.id===o.roomId);
-    if(!st || !c || !sess || !room || room.active===false) return;
+    if(!st || !c || !sess || !room || !roomUsableIn(room.id, sess.id)) return;
     if(!st.courseIds.includes(c.id)) return;
     if(!state.scheduled.some(sc=>sc.sessionId===sess.id && sc.courseId===c.id) && movedSessionOf(st.id,c.id)!==sess.id) return;
     if(isMovedAway(st.id,c.id,sess.id)) return;
@@ -3358,7 +3388,14 @@ function paperRowCells(p){
   return [reportDMY(p.sess.date), p.sess.day||dayName(p.sess.date), `Session ${p.roman} (${periodName(p.sess)})`, `${p.sess.startTime}-${p.sess.endTime}`,
     [...p.codes].join(', '), p.title, p.classes.filter(Boolean).join(', '), p.students, p.copies, [...p.rooms].join(', ')];
 }
+function syncEnvelopeControls(){
+  const set=(sel,v)=>document.querySelectorAll(sel).forEach(el=>{ if(el.value!==v) el.value=v; });
+  syncExamTypeControls(); set('.envStyle', state.envelopeStyle==='label'?'label':'form');
+  set('.envModeSel, #envMode', state.envelopeMode==='paper'?'paper':'room');
+  set('.envPerSel, #envPerPage', String([1,2,4].includes(+state.envelopePerPage)?+state.envelopePerPage:2));
+}
 function renderPaperRequirement(){
+  syncEnvelopeControls();
   const view=document.getElementById('paperReqView'); if(!view) return;
   const sp=document.getElementById('prSpare'); if(sp && document.activeElement!==sp) sp.value=+state.paperSparePct||0;
   const F=paperReqFilter();
@@ -3456,8 +3493,10 @@ function pdfPaperRequirement(){
    per room (what is handed to each room's invigilator). mode 'paper': one
    envelope per paper (same course name + same teacher, one session) with all
    its rooms. Counts come from the seating plan (enrolment when no seating). */
-function envelopeData(mode){
-  mode = mode==='paper' ? 'paper' : 'room';
+function envelopeData(mode, opts){
+  mode = mode==='paper' ? 'paper' : 'room'; opts=opts||{};
+  const F=opts.fromTab?paperReqFilter():{};
+  const tT=opts.fromTab?(document.getElementById('prTeacher')?.value||''):'', tD=opts.fromTab?(document.getElementById('prDate')?.value||''):'';
   const spare=Math.max(0,+state.paperSparePct||0);
   const seats=reportSeating();
   const {romanMap}=sessionOrderMaps();
@@ -3466,17 +3505,21 @@ function envelopeData(mode){
   [...state.sessions].filter(s=>reportDateAllowed(s.date))
     .sort((a,b)=>(a.date||'').localeCompare(b.date||'')||(a.startTime||'').localeCompare(b.startTime||''))
     .forEach(sess=>{
+      if(tD && sess.date!==tD) return;
       sessionCourseIdsFor(sess.id).forEach(cid=>{
         const c=state.courses.find(x=>x.id===cid); if(!c) return;
+        if(F.dept && courseDepartmentName(c)!==F.dept) return;
+        if(F.program && c.program!==F.program) return;
+        if(tT && !splitTeachers(c.faculty).some(t=>t.toLowerCase()===tT.toLowerCase())) return;
         const mine=seats.filter(x=>x.sessionId===sess.id && x.courseId===cid);
         const list = mine.length ? mine.map(x=>({sid:x.studentId, room:state.rooms.find(r=>r.id===x.roomId)?.name||''}))
                                  : studentsOfInSession(cid,sess.id).map(sid=>({sid, room:''}));
         list.forEach(x=>{
           const paperKey=paperRootOf(cid)+'|'+String(c.faculty||'').toLowerCase().trim();
           const key = mode==='room' ? `${sess.id}|${x.room}|${paperKey}` : `${sess.id}|${paperKey}`;
-          if(!env.has(key)) env.set(key,{sess, roman:romanMap[sess.id]||romanNum(sessionPeriodIndex(sess)), codes:new Set(), title:c.title||c.code, classes:new Set(), faculty:c.faculty||'', rooms:new Map(), rolls:[]});
+          if(!env.has(key)) env.set(key,{sess, roman:romanMap[sess.id]||romanNum(sessionPeriodIndex(sess)), codes:new Set(), title:c.title||c.code, classes:new Set(), classLabels:new Set(), depts:new Set(), faculty:c.faculty||'', rooms:new Map(), rolls:[]});
           const e=env.get(key);
-          e.codes.add(c.code); e.classes.add(c.section||c.program||'');
+          e.codes.add(c.code); e.classes.add(c.section||c.program||''); e.classLabels.add([c.program,c.section].filter(Boolean).join('-')); e.depts.add(courseDepartmentName(c));
           e.rooms.set(x.room,(e.rooms.get(x.room)||0)+1);
           const st=stuById.get(x.sid); e.rolls.push(String(st?st.rollNo:x.sid));
         });
@@ -3541,13 +3584,193 @@ function drawEnvelopeLabel(doc, x, y, w, h, e, idx, total, mode){
   doc.text('Returned by: ______________________', left, sy);
   doc.text('Papers returned: ______', x+w-pad, sy-fs(16), {align:'right'});
   doc.text('Sign: ______________', x+w-pad, sy, {align:'right'});
-  doc.setFontSize(fs(7)); doc.setTextColor(110,110,110);
-  doc.text(`Envelope ${idx} of ${total}`, x+w-pad, y+pad, {align:'right'}); doc.setTextColor(0,0,0);
+  envelopeNumber(doc, x+w-pad, y+pad-fs(12), fs(14), idx, total);
 }
-function pdfEnvelopeLabels(){
+// The official DSU question-paper envelope, drawn without the printed header
+// (no logo / CONFIDENTIAL / university name): every field from the exam-type
+// row down, filled in from the timetable + seating plan.
+function envelopeExamType(){ return examTypeWord(); }
+// Big, black envelope number in the top-right corner: "Envelope No. 12 / 390"
+function envelopeNumber(doc, rightX, topY, size, idx, total, prefix){
+  doc.setTextColor(0,0,0).setFont('helvetica','bold').setFontSize(size);
+  const t=`${prefix||'Envelope No.'} ${idx}`; const sub=` / ${total}`;
+  doc.text(t, rightX-doc.getTextWidth(sub)*0.75, topY+size, {align:'right'});
+  doc.setFont('helvetica','normal').setFontSize(size*0.75); doc.text(sub, rightX, topY+size, {align:'right'});
+}
+/* ===== ROOM ENVELOPE: one per room per session, listing every paper in it ===== */
+function roomEnvelopeData(opts){
+  const papers=envelopeData('room', opts);            // one entry per paper per room
+  const m=new Map();
+  papers.forEach(p=>{ const rooms=p.roomText==='To be assigned'?['']:[p.roomText];
+    rooms.forEach(room=>{ const k=p.sess.id+'|'+room; if(!m.has(k)) m.set(k,{sess:p.sess, roman:p.roman, room, papers:[], students:0, copies:0, depts:new Set()});
+      const e=m.get(k); e.papers.push(p); e.students+=p.students; e.copies+=p.copies; (p.depts||[]).forEach(d=>e.depts.add(d)); }); });
+  const out=[...m.values()];
+  out.forEach(e=>e.papers.sort((a,b)=>String(a.title).localeCompare(String(b.title))));
+  out.sort((a,b)=>(a.sess.date||'').localeCompare(b.sess.date||'')||(a.sess.startTime||'').localeCompare(b.sess.startTime||'')||String(a.room).localeCompare(String(b.room),undefined,{numeric:true}));
+  // more than 8 papers -> continuation forms
+  const forms=[]; out.forEach(e=>{ const parts=Math.max(1,Math.ceil(e.papers.length/8)); for(let i=0;i<parts;i++) forms.push({...e, rows:e.papers.slice(i*8,i*8+8), part:i+1, parts}); });
+  return forms;
+}
+function drawRoomEnvelopeForm(doc, x, y, w, h, e, idx, total){
+  const RW=760, RH=470;
+  const s=Math.min(w/RW, h/RH);
+  const ox=x+(w-RW*s)/2, oy=y+(h-RH*s)/2;
+  const X=v=>ox+v*s, Y=v=>oy+v*s, F=v=>v*s;
+  const LC=[40,40,40], INK=[0,0,0];
+  const lbl=(t,px,py,size,bold)=>{ doc.setTextColor(...LC).setFont('helvetica',bold?'bold':'normal').setFontSize(F(size||12)); doc.text(t,X(px),Y(py)); return px+doc.getTextWidth(t)/s; };
+  const line=(x1,x2,py)=>{ doc.setDrawColor(...LC).setLineWidth(F(.8)); doc.line(X(x1),Y(py+2),X(x2),Y(py+2)); };
+  const fit=(t,maxW,fs)=>{ doc.setFontSize(F(fs)); while(fs>6 && doc.getTextWidth(String(t))>F(maxW)){ fs-=.5; doc.setFontSize(F(fs)); } return fs; };
+  const val=(t,x1,x2,py,size)=>{ if(t==null||t==='') return; doc.setTextColor(...INK).setFont('helvetica','bold'); fit(t,x2-x1-6,size||12.5); doc.text(String(t),X(x1+4),Y(py-1)); };
+  const field=(label,lx,lineEnd,py,value,size)=>{ const ex=lbl(label,lx,py,size); line(ex+4,lineEnd,py); val(value,ex+4,lineEnd,py); return ex; };
+  const box=(bx,by,bw,bh,lw)=>{ doc.setDrawColor(...LC).setLineWidth(F(lw||1.1)); doc.rect(X(bx),Y(by),F(bw),F(bh)); };
+  const tick=(bx,by,sz)=>{ doc.setDrawColor(...INK).setLineWidth(F(2.2)); doc.line(X(bx+sz*.18),Y(by+sz*.55),X(bx+sz*.42),Y(by+sz*.82)); doc.line(X(bx+sz*.42),Y(by+sz*.82),X(bx+sz*.88),Y(by+sz*.15)); };
+  doc.setDrawColor(190,190,190).setLineWidth(.5); doc.rect(x+2,y+2,w-4,h-4);
+  envelopeNumber(doc, X(RW-6), Y(2), F(15), idx, total, 'Room Envelope No.');
+  // row 1
+  const exType=envelopeExamType();
+  const sem=String(state.reportSemester || semesterFromDate(e.sess.date) || 'Fall').toLowerCase();
+  const yr=String(state.reportYear || yearFromDate(e.sess.date) || new Date().getFullYear());
+  let cx=10; const r1=44, bs=18;
+  const cb=(label,on)=>{ box(cx,r1-bs+3,bs,bs); if(on) tick(cx,r1-bs+3,bs); cx=lbl(label,cx+bs+4,r1,12.5)+14; };
+  cb('MID Semester Examination', exType==='MID'); cb('END Semester Examination', exType==='END');
+  cb('Spring', /spring/.test(sem)); cb('Summer', /summer/.test(sem));
+  box(cx,r1-bs+3,bs,bs); if(/fall/.test(sem)) tick(cx,r1-bs+3,bs);
+  const fx=lbl('Fall - 20',cx+bs+4,r1,12.5); line(fx,Math.min(RW-6,fx+40),r1); val(yr.slice(-2),fx,Math.min(RW-6,fx+40),r1,13);
+  if(!/fall/.test(sem)){ doc.setTextColor(...INK).setFont('helvetica','bold').setFontSize(F(11)); doc.text(yr, X(RW-6), Y(r1-20), {align:'right'}); }
+  // row 2: date, room, session
+  const r2=92;
+  field('Date of Examination:',10,260,r2, `${reportDMY(e.sess.date)} (${(e.sess.day||dayName(e.sess.date)).slice(0,3)})`);
+  field('Room No:',280,450,r2, e.room||'To be assigned', 15);
+  let sx=lbl('Session:',470,r2,12.5)+8;
+  ['I','II','III','IV'].forEach(rn=>{ const bw=36, bh=27, by=r2-20; const on=String(e.roman)===rn; box(sx,by,bw,bh,on?2:1.1);
+    if(on){ doc.setFillColor(225,225,225); doc.rect(X(sx+1),Y(by+1),F(bw-2),F(bh-2),'F'); }
+    doc.setTextColor(...(on?INK:LC)).setFont('times','bold').setFontSize(F(on?16:13)); doc.text(rn,X(sx+bw/2),Y(by+bh/2+5),{align:'center'});
+    if(on){ doc.setDrawColor(...INK).setLineWidth(F(1.6)); doc.ellipse(X(sx+bw/2),Y(by+bh/2),F(bw/2-1),F(bh/2-1)); }
+    sx+=bw+4; });
+  // table: three boxes, 8 rows
+  const ty=128, rh=30, nR=8, numW=22;
+  const cols=[{x:10,w:310,h:'Course Title'},{x:328,w:222,h:'Name of Course Instructor'},{x:558,w:192,h:'Class & Section'}];
+  cols.forEach(c=>{ lbl(c.h, c.x+c.w/2-doc.getTextWidth(c.h)/s/2, ty-6, 12.5); });
+  cols.forEach((c,ci)=>{ box(c.x,ty,c.w,rh*nR,1.3); for(let i=1;i<nR;i++){ doc.setLineWidth(F(.8)); doc.line(X(c.x),Y(ty+i*rh),X(c.x+c.w),Y(ty+i*rh)); }
+    if(ci===0){ doc.line(X(c.x+numW),Y(ty),X(c.x+numW),Y(ty+rh*nR)); for(let i=0;i<nR;i++){ doc.setTextColor(...LC).setFont('helvetica','normal').setFontSize(F(10)); doc.text(String((e.part-1)*8+i+1),X(c.x+numW/2),Y(ty+i*rh+rh/2+3.5),{align:'center'}); } } });
+  e.rows.forEach((p,i)=>{ const yy=ty+i*rh+rh/2+4;
+    doc.setTextColor(...INK).setFont('helvetica','bold');
+    const t1=`${p.title} (${[...p.codes].join('/')}) — ${p.students}`; fit(t1, cols[0].w-numW-8, 11); doc.text(t1, X(cols[0].x+numW+4), Y(yy));
+    const t2=p.faculty||''; fit(t2, cols[1].w-8, 11); doc.text(t2, X(cols[1].x+4), Y(yy));
+    const t3=[...(p.classLabels||p.classes)].filter(Boolean).join(', '); fit(t3, cols[2].w-8, 11); doc.text(t3, X(cols[2].x+4), Y(yy)); });
+  // bottom
+  const by=ty+rh*nR;
+  field('No. of Envelopes :',10,250,by+34, `${e.papers.length}${e.parts>1?`  (form ${e.part} of ${e.parts})`:''}   ·   ${e.students} students`, 13);
+  lbl('Instructions (if Any):',10,by+66,12.5);
+  line(10,330,by+92);
+  field('Signature:',430,750,by+66,'');
+  field('Name:',430,750,by+96,'');
+  doc.setTextColor(0,0,0); doc.setDrawColor(0,0,0);
+}
+function pdfRoomEnvelopes(fromTab){
+  const data=roomEnvelopeData({fromTab:!!fromTab});
+  if(!data.length){ toast(noReportDataMsg(),'warn'); return; }
+  const per=+state.envelopePerPage===1?1:2;
+  const doc=new jsPDF({unit:'pt',format:'a4',orientation:per===1?'landscape':'portrait'});
+  const pw=doc.internal.pageSize.getWidth(), ph=doc.internal.pageSize.getHeight(), m=20, gap=16;
+  const w=pw-2*m, h=(ph-2*m-(per-1)*gap)/per;
+  data.forEach((e,i)=>{ const slot=i%per; if(i&&slot===0) doc.addPage();
+    drawRoomEnvelopeForm(doc, m, m+slot*(h+gap), w, h, e, i+1, data.length);
+    if(slot===0 && per>1){ doc.setLineDashPattern([4,3],0); doc.setDrawColor(150,150,150).setLineWidth(.4); doc.line(6,m+h+gap/2,pw-6,m+h+gap/2); doc.setLineDashPattern([],0); doc.setDrawColor(0,0,0); } });
+  doc.save('room-envelopes.pdf');
+  toast(`Downloaded ${data.length} room envelope(s) — ${per} per page`,'ok');
+}
+function xlsxRoomEnvelopes(fromTab){
+  const data=roomEnvelopeData({fromTab:!!fromTab});
+  if(!data.length){ toast(noReportDataMsg(),'warn'); return; }
+  const rows=[]; data.forEach((e,i)=>e.rows.forEach((p,j)=>rows.push({'Room Envelope #':i+1,'Exam':envelopeExamType()+' Semester','Date':reportDMY(e.sess.date),'Day':e.sess.day||dayName(e.sess.date),'Session':`Session ${e.roman}`,'Time':`${e.sess.startTime}-${e.sess.endTime}`,'Room':e.room,
+    '#':(e.part-1)*8+j+1,'Course Title':p.title,'Course Code':[...p.codes].join(' / '),'Name of Course Instructor':p.faculty,'Class & Section':[...p.classLabels].filter(Boolean).join(', '),'Students':p.students,'Copies':p.copies,'No. of Envelopes in room':e.papers.length})));
+  xlsxDownload({'Room Envelopes':rows},'room-envelopes.xlsx');
+}
+function drawEnvelopeForm(doc, x, y, w, h, e, idx, total, mode){
+  const RW=760, RH=450;
+  const s=Math.min(w/RW, h/RH);
+  const ox=x+(w-RW*s)/2, oy=y+(h-RH*s)/2;
+  const X=v=>ox+v*s, Y=v=>oy+v*s, F=v=>v*s;
+  const RED=[170,52,40], INK=[0,0,0];
+  const lbl=(t,px,py,size,opts)=>{ doc.setTextColor(...RED).setFont('helvetica',(opts&&opts.bold)?'bold':'normal').setFontSize(F(size||11)); doc.text(t,X(px),Y(py)); return px+doc.getTextWidth(t)/s; };
+  const line=(x1,x2,py)=>{ doc.setDrawColor(...RED).setLineWidth(F(.7)); doc.line(X(x1),Y(py+2),X(x2),Y(py+2)); };
+  const val=(t,x1,x2,py,size)=>{ if(t==null||t==='') return; let fs=size||11.5; doc.setTextColor(...INK).setFont('helvetica','bold');
+    const maxW=F(x2-x1-6); doc.setFontSize(F(fs)); while(fs>6 && doc.getTextWidth(String(t))>maxW){ fs-=.5; doc.setFontSize(F(fs)); }
+    doc.text(String(t),X(x1+4),Y(py-1)); };
+  const field=(label,lx,lineEnd,py,value,size)=>{ const ex=lbl(label,lx,py,size); line(ex+4,lineEnd,py); val(value,ex+4,lineEnd,py); return ex; };
+  const box=(bx,by,bw,bh,lw)=>{ doc.setDrawColor(...RED).setLineWidth(F(lw||.9)); doc.rect(X(bx),Y(by),F(bw),F(bh)); };
+  const tick=(bx,by,sz)=>{ doc.setDrawColor(...INK).setLineWidth(F(2.2)); doc.line(X(bx+sz*.18),Y(by+sz*.55),X(bx+sz*.42),Y(by+sz*.82)); doc.line(X(bx+sz*.42),Y(by+sz*.82),X(bx+sz*.88),Y(by+sz*.15)); };
+  const ul=(t,px,py,size)=>{ const ex=lbl(t,px,py,size,{bold:true}); doc.setDrawColor(...RED).setLineWidth(F(.7)); doc.line(X(px),Y(py+2),X(ex),Y(py+2)); };
+
+  // outer cut border (light)
+  doc.setDrawColor(190,190,190).setLineWidth(.5); doc.rect(x+2,y+2,w-4,h-4);
+  envelopeNumber(doc, X(RW-6), Y(4), F(15), idx, total);
+
+  // 1) exam type + term row
+  const exType=envelopeExamType();
+  const sem=String(state.reportSemester || semesterFromDate(e.sess.date) || 'Fall').toLowerCase();
+  const yr=String(state.reportYear || yearFromDate(e.sess.date) || new Date().getFullYear());
+  let cx=14; const r1=40, bs=17;
+  const cb=(label,on)=>{ box(cx,r1-bs+3,bs,bs); if(on) tick(cx,r1-bs+3,bs); cx=lbl(label,cx+bs+4,r1,11.5,{bold:true})+14; };
+  cb('MID Semester Examinations', exType==='MID');
+  cb('END Semester Examinations', exType==='END');
+  cb('Spring', /spring/.test(sem)); cb('Summer', /summer/.test(sem));
+  box(cx,r1-bs+3,bs,bs); if(/fall/.test(sem)) tick(cx,r1-bs+3,bs);
+  const fx=lbl('Fall - 20',cx+bs+4,r1,11.5,{bold:true}); line(fx,Math.max(fx+30,RW-10),r1); val(/fall/.test(sem)?yr.slice(-2):'',fx,Math.max(fx+30,RW-10),r1,12);
+  if(!/fall/.test(sem)){ /* year still shown for Spring / Summer */ doc.setTextColor(...INK).setFont('helvetica','bold').setFontSize(F(10)); doc.text(yr, X(RW-10), Y(r1-16), {align:'right'}); }
+
+  // 2) date / session / room
+  const r2=86;
+  field('Date of Examination:',14,285,r2, `${reportDMY(e.sess.date)} (${(e.sess.day||dayName(e.sess.date)).slice(0,3)})`);
+  let sx=lbl('Session:',310,r2,11.5)+8;
+  ['I','II','III','IV'].forEach(rn=>{ const bw=34, bh=26, by=r2-19; box(sx,by,bw,bh,1.1);
+    const on=String(e.roman)===rn;
+    if(on){ doc.setFillColor(255,236,200); doc.rect(X(sx+1),Y(by+1),F(bw-2),F(bh-2),'F'); }
+    doc.setTextColor(...(on?INK:RED)).setFont('times','bold').setFontSize(F(on?15:13)); doc.text(rn, X(sx+bw/2), Y(by+bh/2+5), {align:'center'});
+    if(on){ doc.setDrawColor(...INK).setLineWidth(F(1.6)); doc.ellipse(X(sx+bw/2),Y(by+bh/2),F(bw/2-1),F(bh/2-1)); }
+    sx+=bw+3; });
+  field('Room No.',sx+12,RW-10,r2, mode==='room'?e.roomText:e.roomText);
+
+  // 3) left column fields
+  const L2=468;
+  field('Course Title:',14,L2,138, `${e.title}${e.codes.size?' ('+[...e.codes].join(' / ')+')':''}`);
+  field('Name of Course Instructor:',14,L2,174, e.faculty);
+  field('Class & Section:',14,L2,210, [...(e.classLabels||e.classes)].filter(Boolean).join(', '));
+  field('No. of Pages of Question Paper:',14,L2,246, '');
+  field('No. of Copies of Question Paper',14,L2,282, `${e.copies}${e.copies!==e.students?`  (${e.students} students + spare)`:`  (${e.students} students)`}`);
+
+  // 4) TIME FOR / INSTRUCTIONS box
+  box(495,112,255,190);
+  ul('TIME FOR',505,132,11.5);
+  field('Objective Part:',505,742,162,'' ,10.5);
+  field('Subjective Part:',505,742,192,'',10.5);
+  ul('INSTRUCTIONS (IF ANY):',505,222,11);
+  [248,272,296].forEach(py=>line(505,742,py-4));
+
+  // 5) certification
+  doc.setTextColor(...RED).setFont('helvetica','normal').setFontSize(F(11));
+  doc.text('It is certified that Question Paper has been vetted and moderated', X(14), Y(330));
+  doc.text('by the respective HOD.', X(14), Y(348));
+
+  // 6) paper setter + HOD box
+  field("Paper Setter's Signature:",14,440,382,'');
+  field('Name:',14,440,412, '');
+  const dx=field('Department:',14,265,442, [...(e.depts||[])].filter(Boolean).join(', '),10.5);
+  field('Date:',280,440,442,'');
+  box(495,350,255,98);
+  ul('Countersigned by HOD',505,370,11);
+  field('Signature:',505,742,396,'',10.5);
+  field('Name:',505,742,420,'',10.5);
+  field('Date:',505,742,443,'',10.5);
+  doc.setTextColor(0,0,0); doc.setDrawColor(0,0,0);
+}
+function pdfEnvelopeLabels(fromTab){
   const mode=state.envelopeMode==='paper'?'paper':'room';
-  const per=[1,2,4].includes(+state.envelopePerPage)?+state.envelopePerPage:2;
-  const data=envelopeData(mode);
+  const style=state.envelopeStyle==='label'?'label':'form';
+  let per=[1,2,4].includes(+state.envelopePerPage)?+state.envelopePerPage:2;
+  if(style==='form' && per>2) per=2;
+  const data=envelopeData(mode,{fromTab:!!fromTab});
   if(!data.length){ toast(noReportDataMsg(),'warn'); return; }
   // 1 per page: landscape (big label) · 2: two halves · 4: four wide strips
   const doc=new jsPDF({unit:'pt',format:'a4',orientation:per===1?'landscape':'portrait'});
@@ -3557,26 +3780,187 @@ function pdfEnvelopeLabels(){
   data.forEach((e,i)=>{
     const slot=i%per; if(i && slot===0) doc.addPage();
     const cx=slot%cols, cy=Math.floor(slot/cols);
-    drawEnvelopeLabel(doc, m+cx*(w+gap), m+cy*(h+gap), w, h, e, i+1, data.length, mode);
+    (style==='form'?drawEnvelopeForm:drawEnvelopeLabel)(doc, m+cx*(w+gap), m+cy*(h+gap), w, h, e, i+1, data.length, mode);
     if(slot===0){ // dashed cut lines
       doc.setLineDashPattern([4,3],0); doc.setDrawColor(150,150,150).setLineWidth(.4);
       for(let rI=1; rI<rows; rI++){ const ly=m+rI*h+(rI-0.5)*gap; doc.line(6, ly, pw-6, ly); }
       doc.setLineDashPattern([],0); doc.setDrawColor(0,0,0);
     }
   });
-  doc.save(`envelope-labels-${mode==='room'?'per-room':'per-paper'}.pdf`);
-  toast(`Downloaded ${data.length} envelope label(s) — ${per} per page, ${doc.getNumberOfPages()} page(s)`,'ok');
+  doc.save(`envelope-${style==='form'?'forms':'labels'}-${mode==='room'?'per-room':'per-paper'}.pdf`);
+  toast(`Downloaded ${data.length} envelope ${style==='form'?'form':'label'}(s) — ${per} per page, ${doc.getNumberOfPages()} page(s)`,'ok');
 }
-function xlsxEnvelopeLabels(){
+function xlsxEnvelopeLabels(fromTab){
   const mode=state.envelopeMode==='paper'?'paper':'room';
-  const data=envelopeData(mode);
+  const data=envelopeData(mode,{fromTab:!!fromTab});
   if(!data.length){ toast(noReportDataMsg(),'warn'); return; }
   const rows=data.map((e,i)=>({'Envelope #':i+1,'Date':reportDMY(e.sess.date),'Day':e.sess.day||dayName(e.sess.date),'Session':`Session ${e.roman} (${periodName(e.sess)})`,'Time':`${e.sess.startTime}-${e.sess.endTime}`,
-    [mode==='room'?'Room':'Rooms']:e.roomText,'Course Code':[...e.codes].join(' / '),'Course Name':e.title,'Class(es)':[...e.classes].filter(Boolean).join(', '),'Teacher':e.faculty,
+    [mode==='room'?'Room':'Rooms']:e.roomText,'Exam':envelopeExamType()+' Semester','Course Code':[...e.codes].join(' / '),'Course Name':e.title,'Class & Section':[...e.classLabels].filter(Boolean).join(', '),'Teacher':e.faculty,'Department':[...e.depts].filter(Boolean).join(', '),
     'Students':e.students,'No. of Papers':e.copies,'Roll Nos':e.rollRange,'Received by':'','Returned by':'','Papers returned':''}));
   const sheets={'Envelopes':rows};
   if(seatingExcelLayout()==='day') [...new Set(rows.map(r=>r.Date))].forEach(d=>{ sheets[d]=rows.filter(r=>r.Date===d); });
   xlsxDownload(sheets,`envelope-list-${mode==='room'?'per-room':'per-paper'}.xlsx`);
+}
+/* ================= DATE-WISE ROOM SUMMARY (department × date, one page per session) =================
+   Same layout as the printed DSU sheet: title, "SESSION - I (0900 TO 1030 HRS)",
+   a Department column and one column per exam date (date + day) listing every
+   room that department uses. Departments with a different set of exam days
+   (e.g. MBA on the weekend) get their own block below. Rooms come straight from
+   the current seating plan, so it always matches Auto Seating. */
+function drsDate(d){ const x=new Date(d+'T00:00:00'); if(isNaN(x)) return d; return `${x.getDate()}-${x.toLocaleString('en-US',{month:'short'})}-${String(x.getFullYear()).slice(-2)}`; }
+function drsHrs(t){ return String(t||'').replace(':','').padStart(4,'0'); }
+function drsDays(){ return Array.isArray(state.drsDays)?state.drsDays:[]; }
+function drsDayAllowed(d){ const sel=drsDays(); return reportDateAllowed(d) && (!sel.length || sel.includes(d)); }
+function drsLayout(){ return state.drsLayout==='day'?'day':'session'; }
+function setDrsDay(d,on){
+  const all=[...new Set(reportSeating().map(x=>state.sessions.find(s=>s.id===x.sessionId)?.date).filter(Boolean))].sort();
+  if(d==='__ALL__') state.drsDays=[]; else if(d==='__NONE__') state.drsDays=['__none__'];
+  else { const cur=drsDays(); let sel=cur.length?cur.filter(x=>x!=='__none__'):all.slice(); sel=on?[...new Set([...sel,d])]:sel.filter(x=>x!==d); state.drsDays=sel.length===all.length?[]:(sel.length?sel:['__none__']); }
+  save(); renderDrsControls();
+}
+function renderDrsControls(){
+  const el=document.getElementById('drsControls'); if(!el) return;
+  const all=[...new Set(reportSeating().map(x=>state.sessions.find(s=>s.id===x.sessionId)?.date).filter(Boolean))].sort().filter(d=>reportDateAllowed(d));
+  const sel=drsDays(); const on=d=>!sel.length||sel.includes(d);
+  el.innerHTML=all.length?`<div class="row" style="gap:6px;align-items:center;flex-wrap:wrap;margin:6px 0">
+      <label style="font-size:11.5px;font-weight:600;max-width:100%">Layout <select style="max-width:100%" onchange="state.drsLayout=this.value;save()"><option value="session" ${drsLayout()==='session'?'selected':''}>Session-wise (one page per session, dates across)</option><option value="day" ${drsLayout()==='day'?'selected':''}>Day-wise (one page per day, sessions across)</option></select></label>
+      <b style="font-size:11.5px;margin-left:6px">Days:</b>
+      <button class="btn sm ${!sel.length?'':'ghost'}" onclick="setDrsDay('__ALL__')">All days</button>
+      ${all.map(d=>`<label class="rdate ${on(d)?'on':''}"><input type="checkbox" ${on(d)?'checked':''} onchange="setDrsDay('${esc(d)}',this.checked)"> ${esc(dayName(d).slice(0,3))} ${esc(drsDate(d))}</label>`).join('')}
+      <button class="btn sm ghost" onclick="setDrsDay('__NONE__')">Clear</button>
+      <span class="desc">${sel.length&&sel[0]!=='__none__'?sel.filter(d=>all.includes(d)).length:(sel.length?0:all.length)} of ${all.length} day(s)</span></div>`
+    : '<div class="desc">Generate seating first.</div>';
+}
+// Generic: page -> blocks -> {keys, heads, depts:[{name, cols:Map(key->[rooms])}]}
+function dateRoomSummaryData(){
+  const seats=reportSeating();
+  const {romanMap}=sessionOrderMaps();
+  const roomName=new Map(state.rooms.map(r=>[r.id,r.name]));
+  const courseById=new Map(state.courses.map(c=>[c.id,c]));
+  const nat=(a,b)=>String(a).localeCompare(String(b),undefined,{numeric:true});
+  const sessions=[...state.sessions].filter(s=>drsDayAllowed(s.date) && seats.some(x=>x.sessionId===s.id))
+    .sort((a,b)=>(a.date||'').localeCompare(b.date||'')||(a.startTime||'').localeCompare(b.startTime||''));
+  const romanOf=s=>romanMap[s.id]||romanNum(sessionPeriodIndex(s));
+  const hrs=s=>`${drsHrs(s.startTime)} TO ${drsHrs(s.endTime)} HRS`;
+  // dept -> key -> Set(room)
+  const collect=(sessList,keyOf)=>{ const byDept=new Map();
+    sessList.forEach(s=>seats.filter(x=>x.sessionId===s.id).forEach(x=>{ const c=courseById.get(x.courseId); if(!c) return; const d=courseDepartmentName(c);
+      if(!byDept.has(d)) byDept.set(d,new Map()); const m=byDept.get(d); const k=keyOf(s); if(!m.has(k)) m.set(k,new Set()); m.get(k).add(roomName.get(x.roomId)||x.roomId); }));
+    return [...byDept.entries()].map(([name,m])=>{ const freq=new Map(); m.forEach(set=>set.forEach(r=>freq.set(r,(freq.get(r)||0)+1)));
+      const order=[...freq.keys()].sort((a,b)=>(freq.get(b)-freq.get(a))||nat(a,b)); const cols=new Map(); m.forEach((set,k)=>cols.set(k,order.filter(r=>set.has(r))));
+      return {name, days:new Set(m.keys()), cols}; }).sort((a,b)=>b.days.size-a.days.size||nat(a.name,b.name)); };
+  const makeBlocks=(depts, keyOrder, headOf, single)=>{ const blocks=[];
+    depts.forEach(d=>{
+      // a department joins a block when (almost) all of its days are already there
+      const b=single?blocks[0]:blocks.find(b=>{ const inB=[...d.days].filter(x=>b.days.has(x)).length; return inB===d.days.size || inB*3>=d.days.size*2; });
+      if(b){ b.depts.push(d); d.days.forEach(x=>b.days.add(x)); } else blocks.push({days:new Set(d.days), depts:[d]}); });
+    const out=[]; blocks.forEach(b=>{ const ks=keyOrder.filter(k=>b.days.has(k)); b.depts.sort((x,y)=>nat(x.name,y.name));
+      for(let i=0;i<ks.length;i+=6){ const keys=ks.slice(i,i+6); out.push({keys, heads:keys.map(headOf), depts:b.depts.filter(d=>keys.some(k=>d.days.has(k)))}); } });
+    return out; };
+  if(drsLayout()==='day'){
+    const dates=[...new Set(sessions.map(s=>s.date))];
+    return dates.map(d=>{ const ss=sessions.filter(s=>s.date===d);
+      const depts=collect(ss, s=>s.id);
+      return {line:`${String(dayName(d)).toUpperCase()}, ${drsDate(d)}`, sheet:`${dayName(d).slice(0,3)} ${drsDate(d)}`,
+        blocks:makeBlocks(depts, ss.map(s=>s.id), id=>{ const s=ss.find(x=>x.id===id); return [`SESSION - ${romanOf(s)}`, `${drsHrs(s.startTime)}-${drsHrs(s.endTime)} HRS`]; }, true)}; });
+  }
+  const periods=new Map();
+  sessions.forEach(s=>{ const r=romanOf(s); if(!periods.has(r)) periods.set(r,{roman:r, sessions:[], times:new Map()}); const P=periods.get(r); P.sessions.push(s); P.times.set(hrs(s),(P.times.get(hrs(s))||0)+1); });
+  return [...periods.values()].sort((a,b)=>nat(a.roman.length+a.roman,b.roman.length+b.roman)).map(P=>{
+    const time=[...P.times.entries()].sort((a,b)=>b[1]-a[1])[0]?.[0]||'';
+    const dates=[...new Set(P.sessions.map(s=>s.date))].sort();
+    return {line:`SESSION - ${P.roman} ( ${time} )`, sheet:`Session ${P.roman}`, blocks:makeBlocks(collect(P.sessions, s=>s.date), dates, d=>[drsDate(d), dayName(d)])};
+  });
+}
+function dateRoomSummaryTitle(){
+  const sem=String(state.reportSemester||inferSummarySemester()||'').toUpperCase(), yr=state.reportYear||inferSummaryYear()||'';
+  return [`DATE WISE ROOM SUMMARY OF ${examTypeWord()} SEMESTER`,`EXAMINATIONS BEING HELD ${sem} ${yr}`.trim()];
+}
+function pdfDateRoomSummary(){
+  const data=dateRoomSummaryData();
+  if(!data.length){ toast(noReportDataMsg(),'warn'); return; }
+  const doc=new jsPDF({unit:'pt',format:'a4',orientation:'portrait'});
+  const pw=doc.internal.pageSize.getWidth(), ph=doc.internal.pageSize.getHeight(), M=28;
+  const [t1,t2]=dateRoomSummaryTitle();
+  data.forEach((P,pi)=>{
+    if(pi) doc.addPage();
+    doc.setTextColor(0,0,0).setFont('times','bold').setFontSize(13);
+    doc.text(t1,pw/2,M+10,{align:'center'}); doc.text(t2,pw/2,M+26,{align:'center'});
+    doc.setFontSize(10.5); const sl=P.line; doc.text(sl,pw/2,M+41,{align:'center'});
+    const sw=doc.getTextWidth(sl); doc.setLineWidth(.7); doc.line(pw/2-sw/2,M+43,pw/2+sw/2,M+43);
+    // fit every block of this session on one page
+    const totalRows=P.blocks.reduce((n,b)=>n+2+b.depts.reduce((m,d)=>m+Math.max(1,...b.keys.map(x=>(d.cols.get(x)||[]).length)),0),0);
+    const avail=ph-(M+52)-M-P.blocks.length*8;
+    const rowH=Math.max(8,Math.min(20,avail/Math.max(1,totalRows)));
+    const fs=Math.max(5.5,Math.min(10.5,rowH*0.58));
+    let y=M+50;
+    P.blocks.forEach(b=>{
+      const body=[];
+      b.depts.forEach(d=>{
+        const n=Math.max(1,...b.keys.map(x=>(d.cols.get(x)||[]).length));
+        for(let i=0;i<n;i++){
+          const row=[]; if(i===0) row.push({content:d.name.replace(/\s*&\s*/g,'\n&\n'),rowSpan:n,styles:{fontStyle:'bold',fontSize:fs*1.25,valign:'middle',halign:'center'}});
+          b.keys.forEach(x=>row.push((d.cols.get(x)||[])[i]||'')); body.push(row);
+        }
+      });
+      const dateW=(pw-2*M-74)/b.keys.length;
+      doc.autoTable({
+        startY:y, theme:'grid', margin:{left:M,right:M},
+        head:[[{content:'Department',rowSpan:2,styles:{valign:'middle'}},...b.heads.map(h=>h[0])],b.heads.map(h=>h[1])],
+        body,
+        styles:{font:'times',fontSize:fs,cellPadding:{top:Math.max(.5,(rowH-fs)/2-.5),bottom:Math.max(.5,(rowH-fs)/2-.5),left:2,right:2},textColor:[0,0,0],lineColor:[0,0,0],lineWidth:.5,halign:'center',valign:'middle',minCellHeight:rowH},
+        headStyles:{fillColor:[255,255,255],textColor:0,fontStyle:'bold',halign:'center',fontSize:fs*1.05,minCellHeight:rowH*0.9},
+        columnStyles:Object.fromEntries([[0,{cellWidth:74}],...b.keys.map((_,i)=>[i+1,{cellWidth:dateW}])]),
+        pageBreak:'auto', rowPageBreak:'avoid'
+      });
+      y=doc.lastAutoTable.finalY+8;
+    });
+  });
+  doc.save(`date-wise-room-summary-${examTypeWord().toLowerCase()}.pdf`);
+  toast(`Downloaded Date-wise Room Summary — ${data.length} ${drsLayout()==='day'?'day':'session'} page(s)`,'ok');
+}
+async function xlsxDateRoomSummary(){
+  const data=dateRoomSummaryData();
+  if(!data.length){ toast(noReportDataMsg(),'warn'); return; }
+  const wb=new ExcelJS.Workbook(); wb.creator='DHA Suffa University';
+  const [t1,t2]=dateRoomSummaryTitle(); const _used=new Set();
+  const thin={style:'thin',color:{argb:'FF000000'}}, all={top:thin,left:thin,bottom:thin,right:thin};
+  const F=(sz,b)=>({name:'Times New Roman',size:sz,bold:!!b});
+  const C={horizontal:'center',vertical:'middle',wrapText:true};
+  data.forEach(P=>{
+    const maxCols=Math.max(...P.blocks.map(b=>b.keys.length));
+    const ws=wb.addWorksheet(safeSheetName(P.sheet,_used),{pageSetup:{paperSize:9,orientation:'portrait',fitToPage:true,fitToWidth:1,fitToHeight:1,horizontalCentered:true,margins:{left:.3,right:.3,top:.4,bottom:.4,header:.2,footer:.2}}});
+    ws.getColumn(1).width=16; for(let i=2;i<=maxCols+1;i++) ws.getColumn(i).width=15;
+    let r=1;
+    const title=(t,sz,u)=>{ ws.mergeCells(r,1,r,maxCols+1); const c=ws.getCell(r,1); c.value=t; c.font={...F(sz,true),underline:!!u}; c.alignment=C; ws.getRow(r).height=sz*1.45; r++; };
+    title(t1,14); title(t2,14); title(P.line,11.5,true);
+    P.blocks.forEach((b,bi)=>{
+      if(bi) r++;
+      const span=(maxCols)/b.keys.length; // stretch short blocks across the page width
+      const colOf=i=>2+Math.round(i*span), colEnd=i=>1+Math.round((i+1)*span);
+      ws.mergeCells(r,1,r+1,1); const h=ws.getCell(r,1); h.value='Department'; h.font=F(10.5,true); h.alignment=C;
+      b.heads.forEach((hd,i)=>{ const c1=colOf(i), c2=colEnd(i);
+        if(c2>c1){ ws.mergeCells(r,c1,r,c2); ws.mergeCells(r+1,c1,r+1,c2); }
+        ws.getCell(r,c1).value=hd[0]; ws.getCell(r,c1).font=F(10.5,true); ws.getCell(r,c1).alignment=C;
+        ws.getCell(r+1,c1).value=hd[1]; ws.getCell(r+1,c1).font=F(10.5,true); ws.getCell(r+1,c1).alignment=C; });
+      for(let rr=r;rr<=r+1;rr++) for(let cc=1;cc<=maxCols+1;cc++) ws.getCell(rr,cc).border=all;
+      r+=2;
+      b.depts.forEach(d=>{
+        const n=Math.max(1,...b.keys.map(x=>(d.cols.get(x)||[]).length));
+        ws.mergeCells(r,1,r+n-1,1); const dc=ws.getCell(r,1); dc.value=d.name.replace(/\s*&\s*/g,'\n&\n'); dc.font=F(13,true); dc.alignment=C;
+        for(let i=0;i<n;i++){
+          b.keys.forEach((x,k)=>{ const c1=colOf(k), c2=colEnd(k); if(c2>c1) ws.mergeCells(r+i,c1,r+i,c2);
+            const c=ws.getCell(r+i,c1); c.value=(d.cols.get(x)||[])[i]||''; c.font=F(b.keys.length<maxCols?13:10.5); c.alignment=C; });
+          for(let cc=1;cc<=maxCols+1;cc++) ws.getCell(r+i,cc).border=all;
+          ws.getRow(r+i).height=16;
+        }
+        r+=n;
+      });
+    });
+  });
+  const buf=await wb.xlsx.writeBuffer();
+  downloadBlob(new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}), `date-wise-room-summary-${examTypeWord().toLowerCase()}.xlsx`);
+  toast(`Downloaded Date-wise Room Summary Excel — one sheet per ${drsLayout()==='day'?'day':'session'}`,'ok');
 }
 /* ================= EXAMS PER DAY ================= */
 function examLoadRows(){
@@ -4315,7 +4699,7 @@ function renderSeating(){
     // Show every active room, including rooms with zero current seats, so
     // manual editing can place a parked student in a completely empty room
     // (unless "Hide empty rooms" / a course filter is on).
-    const roomIds = state.rooms.filter(r=>r.active!==false).map(r=>r.id)
+    const roomIds = state.rooms.filter(r=>roomUsableIn(r.id, sess.id)).map(r=>r.id)
       .filter(rid=> F.course ? ss.some(x=>x.roomId===rid && x.courseId===F.course) : (!F.hideEmpty || ss.some(x=>x.roomId===rid)));
     const sessCourseObjs = sessionCourseIdsFor(sess.id).map(id=>state.courses.find(c=>c.id===id)).filter(Boolean)
       .sort((a,b)=>String(a.code).localeCompare(String(b.code),undefined,{numeric:true}));
@@ -4455,19 +4839,21 @@ function renderSeating(){
                    if(gapCols.has(ci)){
                      // Keep the visual separator, but make every physical cell
                      // a valid manual drop target.
-                     return `<div class="seat empty manual-drop-slot" ${dropAttrs}
+                     return `<div class="seat empty manual-drop-slot" ${dropAttrs} ondblclick="openSeatEditor('${sess.id}','${rid}',${ri+1},${ci})"
                        style="background:repeating-linear-gradient(45deg,#f8fafc,#f8fafc 4px,#e2e8f0 4px,#e2e8f0 8px);border:1px dashed #cbd5e1;color:#94a3b8;font-size:7px"
                        title="Empty manual drop slot${ri===0?' / separator column':''}">${ri===0?'|':''}</div>`;
                    }
                   const seat = seats.find(s=>s.row===ri+1 && s.col===ci);
                    if(!seat && _booked.has(`${rid}|${ri+1}|${ci}`)) return `<div class="seat booked-seat" title="Booked by ${esc(_booked.get(`${rid}|${ri+1}|${ci}`))} (Room Availability Viewer) -- locked">🔒<small>${esc(_booked.get(`${rid}|${ri+1}|${ci}`))}</small></div>`;
-                   if(!seat) return `<div class="seat empty manual-drop-slot" ${dropAttrs} style="min-height:42px" title="Empty slot — drop a parked student here">+</div>`;
+                   if(!seat) return `<div class="seat empty manual-drop-slot" ${dropAttrs} ondblclick="openSeatEditor('${sess.id}','${rid}',${ri+1},${ci})" style="min-height:42px" title="Empty slot — drop a parked student here, or double-click to type a student in">+<span class="seat-edit" onclick="event.stopPropagation();openSeatEditor('${sess.id}','${rid}',${ri+1},${ci})" title="Type a student into this seat">✎</span></div>`;
                   const stu = state.students.find(x=>x.id===seat.studentId);
                   const c = state.courses.find(x=>x.id===seat.courseId);
                    const seatKey=dragSelectionKey(seat);
                    return `<div class="seat ${courseColor.get(seat.courseId)} ${F.course&&seat.courseId!==F.course?'seat-dim':''} ${seat.manual?'manual-seat':''} ${_justPlacedSeatKeys.has(`${sess.id}|${rid}|${ri+1}|${ci}`)?'just-placed':''}" draggable="true"
                      ondragstart='startSeatedStudentDrag(event,${JSON.stringify({sessionId:seat.sessionId,roomId:seat.roomId,row:seat.row,col:seat.col,studentId:seat.studentId,courseId:seat.courseId})})'
-                     style="min-height:42px" title="${esc(stu?stu.name+' · ID: '+stu.rollNo:seat.studentId)} -- ${esc(c?courseLabel(c,true):'')}${seat.manual?' -- MANUAL':''}">
+                     ondblclick="openSeatEditor('${sess.id}','${rid}',${ri+1},${ci})"
+                     style="min-height:42px" title="${esc(stu?stu.name+' · ID: '+stu.rollNo:seat.studentId)} -- ${esc(c?courseLabel(c,true):'')}${seat.manual?' -- MANUAL':''} -- double-click or ✎ to edit">
+                     <span class="seat-edit" onclick="event.stopPropagation();openSeatEditor('${sess.id}','${rid}',${ri+1},${ci})" title="Edit this seat: name, roll number, program, section, course">✎</span>
                      <input type="checkbox" class="seat-select" onclick="toggleDragSelection(event,'seat','${seatKey}',this.checked)" aria-label="Select ${esc(stu?.name||seat.studentId)}">
                      <span class="seat-course" title="${esc(c?courseLabel(c,true):'')}"><b>${esc(c?c.code:'')}</b>${c&&c.title&&c.title!==c.code?' — '+esc(c.title):''}</span>
                      <span class="seat-student-name">${esc(stu?stu.name:seat.studentId.slice(-8))}</span>
@@ -5096,6 +5482,10 @@ function bookedBlockMsg(sessId, roomId, row, col){ const b=(state.roomBookings||
 // Rooms ticked "Utilize this room in Auto Seating" (per session).
 function autoFillRoomSet(){ if(!Array.isArray(state.autoFillRooms)) state.autoFillRooms=[]; return state.autoFillRooms; }
 function isAutoFillRoom(sessId, roomId){ return (state.autoFillRooms||[]).includes(sessId+'|'+roomId); }
+// A room is in use for a session when it is active, or when it was selected
+// in the Room Availability Viewer for that session (even if switched off in
+// Rooms). Seating view, manual seats and every report use this same rule.
+function roomUsableIn(roomId, sessId){ const r=state.rooms.find(x=>x.id===roomId); return !!r && (r.active!==false || isAutoFillRoom(sessId, roomId)); }
 /* ===== Per-student session moves (manual drag across sessions) =====
    Dragging a student into a session where that paper is NOT scheduled is
    allowed. Instead of re-scheduling the whole course there (which would drag
@@ -5461,6 +5851,133 @@ function moveSeatedStudentSeat(source, sessionId, roomId, row, col){
   const rm=state.rooms.find(x=>x.id===roomId);
   const sess=state.sessions.find(s=>s.id===sessionId);
   toast(`✓ Course placed — ${st?st.name:source.studentId} → ${c?courseLabel(c):source.courseId} @ ${rm?rm.name:roomId} R${row}C${col}${crossSession&&sess?` (moved to ${sess.label} ${sess.date})`:''}`,'ok');
+}
+/* ================= SEAT EDITOR (type a student into any seat) =================
+   Double-click a seat (or its ✎) to edit name, roll number, program, section
+   and course. Changes are written to the student / seating records themselves,
+   so every report, attendance sheet, notice board and envelope picks them up. */
+let _seatEd=null;
+function openSeatEditor(sessId, roomId, row, col){
+  const sess=state.sessions.find(s=>s.id===sessId), room=state.rooms.find(r=>r.id===roomId); if(!sess||!room) return;
+  if(isSeatBooked(sessId,roomId,row,col)){ toast(bookedBlockMsg(sessId,roomId,row,col),'err'); return; }
+  const seat=state.seating.find(x=>x.sessionId===sessId&&x.roomId===roomId&&x.row===row&&x.col===col)||null;
+  const stu=seat?state.students.find(x=>x.id===seat.studentId):null;
+  // default course: the seat's, else the course already in this column, else the first of the session
+  const colSeat=state.seating.find(x=>x.sessionId===sessId&&x.roomId===roomId&&x.col===col);
+  const sessCourses=sessionCourseIdsFor(sessId).map(id=>state.courses.find(c=>c.id===id)).filter(Boolean)
+    .sort((a,b)=>String(a.code).localeCompare(String(b.code),undefined,{numeric:true}));
+  const defCourse=seat?seat.courseId:(colSeat?colSeat.courseId:(sessCourses[0]?.id||''));
+  _seatEd={sessId,roomId,row,col,seat:seat?{...seat}:null};
+  document.getElementById('seatEditor')?.remove();
+  const others=state.courses.filter(c=>!sessCourses.includes(c)).sort((a,b)=>String(a.code).localeCompare(String(b.code),undefined,{numeric:true}));
+  const opt=c=>`<option value="${esc(c.id)}" ${c.id===defCourse?'selected':''}>${esc(courseLabel(c,true))}${c.faculty?' · '+esc(c.faculty):''}</option>`;
+  const progs=[...new Set(state.students.map(x=>x.program).filter(Boolean))].sort();
+  const el=document.createElement('div'); el.id='seatEditor';
+  el.innerHTML=`<div class="se-box" onclick="event.stopPropagation()">
+    <h4>✎ ${seat?'Edit seat':'Fill seat'} — ${esc(room.name)} · Column ${col}, Row ${row}</h4>
+    <div class="se-sub">${esc(sess.label||periodName(sess))} · ${esc(reportDMY(sess.date))} · ${esc(sess.startTime)}-${esc(sess.endTime)}. Changes update every report.</div>
+    <div class="se-grid">
+      <label>Roll No / Student ID<input id="seRoll" list="seRollList" value="${esc(stu?stu.rollNo:'')}" oninput="seatEdRollTyped()" autocomplete="off"></label>
+      <label>Student Name<input id="seName" value="${esc(stu?stu.name:'')}"></label>
+      <label>Program<input id="seProg" list="seProgList" value="${esc(stu?stu.program||'':'')}"></label>
+      <label>Section<input id="seSec" value="${esc(stu?stu.section||'':'')}"></label>
+      <label class="full">Course (paper written in this seat)<select id="seCourse"><optgroup label="Courses in this session">${sessCourses.map(opt).join('')}</optgroup>${others.length?`<optgroup label="Other courses">${others.map(opt).join('')}</optgroup>`:''}</select></label>
+    </div>
+    <datalist id="seRollList">${state.students.map(x=>`<option value="${esc(x.rollNo)}">${esc(x.name)}${x.program?' · '+esc(x.program):''}</option>`).join('')}</datalist>
+    <datalist id="seProgList">${progs.map(p=>`<option value="${esc(p)}">`).join('')}</datalist>
+    <div class="se-note" id="seNote">${seat?'Editing the name / roll number changes this student everywhere. Typing another existing roll number seats that student here instead.':'Type a roll number: an existing student is picked up automatically, a new one is created.'}</div>
+    <div class="se-actions">
+      ${seat?`<button class="btn sm ghost" style="color:#b91c1c;border-color:#fca5a5" onclick="seatEdClear()" title="Move this student to the Student Park and leave the seat empty">🅿️ Empty seat (park student)</button>`:''}
+      <span style="flex:1"></span>
+      <button class="btn sm ghost" onclick="closeSeatEditor()">Cancel</button>
+      <button class="btn sm" onclick="seatEdSave()">💾 Save</button>
+    </div></div>`;
+  el.addEventListener('click',closeSeatEditor);
+  el.addEventListener('keydown',ev=>{ if(ev.key==='Escape') closeSeatEditor(); if(ev.key==='Enter' && ev.target.tagName==='INPUT') seatEdSave(); });
+  document.body.appendChild(el);
+  setTimeout(()=>document.getElementById(seat?'seName':'seRoll')?.focus(),30);
+}
+function closeSeatEditor(){ document.getElementById('seatEditor')?.remove(); _seatEd=null; }
+function findStudentByRoll(roll){ const r=String(roll||'').trim().toLowerCase(); return r?state.students.find(x=>String(x.rollNo||'').trim().toLowerCase()===r)||null:null; }
+function seatEdRollTyped(){
+  if(!_seatEd) return;
+  const st=findStudentByRoll(document.getElementById('seRoll').value); const note=document.getElementById('seNote');
+  const cur=_seatEd.seat?state.students.find(x=>x.id===_seatEd.seat.studentId):null;
+  if(st && (!cur || st.id!==cur.id)){
+    document.getElementById('seName').value=st.name||''; document.getElementById('seProg').value=st.program||''; document.getElementById('seSec').value=st.section||'';
+    const sel=document.getElementById('seCourse'); const own=sessionCourseIdsFor(_seatEd.sessId).find(cid=>(st.courseIds||[]).includes(cid));
+    if(own) sel.value=own;
+    note.textContent=`Existing student: ${st.name} (${st.rollNo}) — ${(st.courseIds||[]).length} course(s). Saving seats this student here${cur?` and parks ${cur.name}`:''}.`;
+  } else if(!st && String(document.getElementById('seRoll').value).trim()){
+    note.textContent=cur?`Roll number of ${cur.name} will be changed to this one.`:'New student — will be created with the course below.';
+  }
+}
+function seatEdClear(){
+  if(!_seatEd||!_seatEd.seat) return; const s=_seatEd.seat; closeSeatEditor();
+  parkSeatedStudents([s], s.sessionId);
+}
+function seatEdSave(){
+  if(!_seatEd) return;
+  const {sessId,roomId,row,col}=_seatEd;
+  const seat=state.seating.find(x=>x.sessionId===sessId&&x.roomId===roomId&&x.row===row&&x.col===col)||null;
+  const roll=document.getElementById('seRoll').value.trim(), name=document.getElementById('seName').value.trim();
+  const prog=document.getElementById('seProg').value.trim(), sec=document.getElementById('seSec').value.trim();
+  const courseId=document.getElementById('seCourse').value;
+  const note=m=>{ const n=document.getElementById('seNote'); if(n){ n.style.color='#b91c1c'; n.textContent=m; } };
+  if(!roll){ note('Type the roll number / student ID.'); return; }
+  if(!courseId){ note('Pick the course written in this seat.'); return; }
+  const course=state.courses.find(c=>c.id===courseId);
+  const cur=seat?state.students.find(x=>x.id===seat.studentId):null;
+  let target=findStudentByRoll(roll), created=false;
+  if(cur && (!target || target.id===cur.id)) target=cur;          // editing the seated student
+  if(target && target.id!==(cur&&cur.id)){
+    // existing other student keeps its record; only blank fields are filled
+    if(name && !target.name) target.name=name;
+  }
+  // checks before anything changes (same student + same course in place = pure edit)
+  const pureEdit = seat && target && seat.studentId===target.id && seat.courseId===courseId;
+  if(!pureEdit){
+    if(target){
+      const tc=timeClashesFor(target.id, courseId, sessId).filter(x=>!(seat && seat.studentId===target.id && x.course.id===seat.courseId));
+      if(tc.length){ note(`⛔ ${describeTimeClash(target.id,tc)} at this time — a student cannot sit two exams at once.`); return; }
+    }
+    const ign=seat?{studentId:seat.studentId,courseId:seat.courseId}:null;
+    const nb=sameSubjectNeighbour(sessId, roomId, row, col, courseId, ign);
+    if(nb){ note(sameSubjectBlockMsg(nb, courseId)); return; }
+  }
+  if(!target){
+    target={id:uid(), rollNo:roll, name:name||roll, program:prog||course?.program||'', section:sec||course?.section||'', courseIds:[]};
+    state.students.push(target); created=true;
+  } else {
+    // write the typed fields to the student record (synced to every report)
+    if(roll) target.rollNo=roll; if(name) target.name=name;
+    if(prog || target.program) target.program=prog; if(sec || target.section) target.section=sec;
+  }
+  let enrolled=false;
+  if(!Array.isArray(target.courseIds)) target.courseIds=[];
+  if(!target.courseIds.includes(courseId)){ target.courseIds.push(courseId); enrolled=true; if(course) course.studentCount=state.students.filter(x=>(x.courseIds||[]).includes(courseId)).length; }
+  if(!pureEdit){
+    // previous occupant leaves this seat -> Student Park (nothing is lost)
+    if(seat){
+      state.seating=state.seating.filter(x=>x!==seat);
+      state.manualSeatOverrides=(state.manualSeatOverrides||[]).filter(o=>!(o.sessionId===seat.sessionId&&o.studentId===seat.studentId&&o.courseId===seat.courseId));
+      if(!(seat.studentId===target.id && seat.courseId===courseId)) addStudentToPark(seat.sessionId, seat.studentId, seat.courseId);
+    }
+    // target: put (student, course) into this session, drop any other seat / park entry
+    setStudentSession(target.id, courseId, sessId);
+    state.seating=state.seating.filter(x=>!(x.sessionId===sessId&&x.studentId===target.id&&x.courseId===courseId));
+    state.parkedStudents=(state.parkedStudents||[]).filter(p=>!(p.sessionId===sessId&&p.studentId===target.id&&p.courseId===courseId));
+    const ov={sessionId:sessId,roomId,row,col,studentId:target.id,courseId};
+    state.manualSeatOverrides=(state.manualSeatOverrides||[]).filter(o=>!(o.studentId===target.id&&o.courseId===courseId));
+    state.manualSeatOverrides.push(ov);
+    state.seating.push({...ov,manual:true});
+    if(!state.scheduled.some(sc=>sc.courseId===courseId)) ensureScheduled(sessId, courseId);
+    markJustPlaced(sessId, roomId, row, col);
+  }
+  closeSeatEditor();
+  save(); renderSeating();
+  const rm=state.rooms.find(r=>r.id===roomId);
+  toast(`✓ ${rm?rm.name:''} C${col} R${row}: ${target.name} (${target.rollNo}) — ${course?courseLabel(course):''}${created?' · new student added':''}${enrolled&&!created?' · enrolled in this course':''}${seat&&!pureEdit&&seat.studentId!==target.id?' · previous student moved to Student Park':''} · reports updated`,'ok');
 }
 function dropSeatStudent(ev){
   ev.preventDefault();
@@ -7915,7 +8432,7 @@ const TAB_RENDERERS = {
   students:     [renderCourses, renderStudents, updateStats],
   attendance:   [renderShortAttendance],
   docrequired:  [renderDocRequired],
-  exports:      [renderReportDatePicker, ()=>{ const m=document.getElementById('envMode'); if(m) m.value=state.envelopeMode==='paper'?'paper':'room'; const pp=document.getElementById('envPerPage'); if(pp) pp.value=String([1,2,4].includes(+state.envelopePerPage)?+state.envelopePerPage:2); }, ()=>{ const el=document.getElementById('noticeBoardLayout'); if(el) el.value=state.noticeBoardLayout||'newpage'; const o=document.getElementById('noticeBoardOrder'); if(o) o.value=state.noticeBoardOrder||'date'; const at=document.getElementById('attendanceOrder'); if(at) at.value=state.attendanceOrder||'date'; }],
+  exports:      [renderReportDatePicker, ()=>{ try{ renderDrsControls(); }catch(e){} }, ()=>{ const m=document.getElementById('envMode'); if(m) m.value=state.envelopeMode==='paper'?'paper':'room'; const pp=document.getElementById('envPerPage'); if(pp) pp.value=String([1,2,4].includes(+state.envelopePerPage)?+state.envelopePerPage:2); syncEnvelopeControls(); }, ()=>{ const el=document.getElementById('noticeBoardLayout'); if(el) el.value=state.noticeBoardLayout||'newpage'; const o=document.getElementById('noticeBoardOrder'); if(o) o.value=state.noticeBoardOrder||'date'; const at=document.getElementById('attendanceOrder'); if(at) at.value=state.attendanceOrder||'date'; }],
   deptsummary:  [renderDepartmentSummary],
   invigilation: [renderInvigilation]
 };
@@ -7990,14 +8507,14 @@ function reportSeating(){
   const src=state.seating||[];
   if(_reportSeatCache && _reportSeatCache.src===src && _reportSeatCache.len===src.length) return _reportSeatCache.out;
   const sessIds=new Set(state.sessions.map(s=>s.id));
-  const roomOk=new Map(state.rooms.map(r=>[r.id,r.active!==false]));
+  const roomOk={get:rid=>true}; const roomUse=(rid,sid)=>roomUsableIn(rid,sid);
   const courseIds=new Set(state.courses.map(c=>c.id));
   const stuById=new Map(state.students.map(s=>[s.id,s]));
   const schedOf=new Map(); state.scheduled.forEach(sc=>schedOf.set(sc.courseId,sc.sessionId));
   const parked=new Set((state.parkedStudents||[]).map(p=>`${p.sessionId}|${p.studentId}|${p.courseId}`));
   const byKey=new Map(), bySlot=new Map();
   src.forEach(x=>{
-    if(!sessIds.has(x.sessionId) || !roomOk.get(x.roomId) || !courseIds.has(x.courseId)) return;
+    if(!sessIds.has(x.sessionId) || !roomUse(x.roomId,x.sessionId) || !courseIds.has(x.courseId)) return;
     const st=stuById.get(x.studentId);
     if(st && Array.isArray(st.courseIds) && !st.courseIds.includes(x.courseId)) return;
     if(!st && !String(x.studentId).startsWith(x.courseId+'-')) return;
@@ -8046,7 +8563,15 @@ function renderReportDatePicker(){
       ${all.map(d=>`<label class="rdate ${isOn(d)?'on':''}"><input type="checkbox" ${isOn(d)?'checked':''} onchange="toggleReportDate('${esc(d)}',this.checked)"> ${esc(dayName(d).slice(0,3))} ${esc(reportDMY(d))}</label>`).join('')}
       <button class="btn sm ghost" onclick="toggleReportDate('__NONE__')">Clear</button>
       <span class="desc">${n} of ${all.length} date(s) selected — applies to every report button below (PDF and Excel)</span>
-    </div>` : '<span class="desc">📅 Report dates: schedule exams first.</span>';
+    </div>` : '<span class="desc">📅 Report dates: schedule exams first.</span>';  try{ renderDrsControls(); }catch(e){}
+  // live sync status: reports read the same seating records as Auto Seating
+  try{
+    const rs=reportSeating(), seated=state.seating.length, parked=(state.parkedStudents||[]).length;
+    const manual=state.seating.filter(x=>x.manual).length, booked=(state.roomBookings||[]).length;
+    const inDates=rs.filter(x=>{ const ss=state.sessions.find(z=>z.id===x.sessionId); return ss && reportDateAllowed(ss.date); }).length;
+    const ok=rs.length===seated;
+    el.innerHTML+=`<div class="sync-strip ${ok?'ok':'warn'}">${ok?'🔄 <b>In sync with Auto Seating</b>':'⚠ <b>Check Auto Seating</b>'} — ${rs.length} seat(s) in reports${ok?'':` vs ${seated} on screen`} · ${manual} typed / dragged manually · ${parked} parked (not printed) · ${booked} seat(s) booked by other departments${inDates!==rs.length?` · <b>${inDates}</b> fall on the selected report dates`:''}. Every change in Auto Seating (drag, park, ✎ edit, new student) is used the next time you click a report button.</div>`;
+  }catch(e){}
 }
 function buildSeatingPlanBlocks(){
   const sessionsSorted = [...state.sessions].filter(s=>reportDateAllowed(s.date)).sort((a,b)=> (a.date||'').localeCompare(b.date||'') || (a.startTime||'').localeCompare(b.startTime||''));
@@ -8514,10 +9039,19 @@ function yearFromDate(dateValue){
   const m=String(dateValue).match(/(19|20)\d{2}/);
   return m ? m[0] : '';
 }
+// MID-term / END-term: one setting (Exam Settings, Reports, Teacher Paper tab)
+// used by every report title and every envelope.
+function examTypeWord(){ const t=state.examType||state.envelopeExamType; return t==='MID'?'MID':'END'; }
+function setExamType(v){
+  state.examType=v==='MID'?'MID':'END'; state.envelopeExamType=state.examType;
+  syncReportExamTitle(); save(); syncExamTypeControls();
+  toast(`Examination set to ${state.examType} Semester — all reports and envelopes now print "${reportExamTitle()}"`,'ok');
+}
+function syncExamTypeControls(){ document.querySelectorAll('.examTypeSel').forEach(el=>{ if(el.value!==examTypeWord()) el.value=examTypeWord(); }); const t=document.getElementById('examTitle'); if(t) t.value=reportExamTitle(); }
 function reportExamTitle(){
   const sem=state.reportSemester || semesterFromDate(reportPeriodDate()) || 'Fall';
   const year=state.reportYear || yearFromDate(reportPeriodDate()) || String(new Date().getFullYear());
-  return `END SEMESTER EXAMINATIONS - ${String(sem).toUpperCase()} SEMESTER ${year}`;
+  return `${examTypeWord()} SEMESTER EXAMINATIONS - ${String(sem).toUpperCase()} SEMESTER ${year}`;
 }
 function syncReportExamTitle(){
   state.examTitle=reportExamTitle();
@@ -8549,7 +9083,7 @@ function initSummaryReportControls(){
   sem.value=state.reportSemester;
   if(!state.reportYear) state.reportYear=inferSummaryYear();
   if(yr) yr.value=state.reportYear;
-  syncReportExamTitle();
+  syncReportExamTitle(); syncExamTypeControls();
   if(dept){
     const current=String(state.departmentName||'').trim();
     const opts=summaryDepartmentOptions();
@@ -8879,7 +9413,7 @@ function pdfSummary(kind){
   groups.forEach((g,i)=>{
     const dateLabel = g.sessionLabel ? `${reportDMY(g.date)}    Session ${g.sessionLabel}` : reportDMY(g.date);
     if(kind==='faculty') summaryPdfFacultySection(doc,{...g,date:dateLabel},i===0,timetableDepartmentHeaderLabel());
-    else summaryPdfSection(doc,'END SEMESTER EXAMINATIONS SEATING SUMMARY',dateLabel,g.rows,g.rooms,i===0,timetableDepartmentHeaderLabel());
+    else summaryPdfSection(doc,`${examTypeWord()} SEMESTER EXAMINATIONS SEATING SUMMARY`,dateLabel,g.rows,g.rooms,i===0,timetableDepartmentHeaderLabel());
   });
   doc.save(kind==='faculty'?'faculty-wise-summary-DSU.pdf':'course-wise-summary-DSU.pdf');
   toast(`Downloaded ${kind==='faculty'?'Faculty-wise':'Course-wise'} Summary PDF — ${summaryReportRows(kind).length} course/room record(s)`,'ok');
@@ -8944,7 +9478,7 @@ function summaryPdfFacultySection(doc,g,isFirst,departmentLabel){
       return [i+1,L.subject,L.classes,x.faculty||'--',...roomNames.map(n=>x.rooms[n]||''),x.students||0];
     });
   };
-  const hdr=(d,compact)=>summaryHeaderRows(d,'END SEMESTER EXAMINATIONS SEATING SUMMARY',g.date,g.rooms,departmentLabel,false,compact);
+  const hdr=(d,compact)=>summaryHeaderRows(d,`${examTypeWord()} SEMESTER EXAMINATIONS SEATING SUMMARY`,g.date,g.rooms,departmentLabel,false,compact);
   const L=summaryFitOnePage(doc,hdr,roomNames,bodyAt);
   const y=hdr(doc,L.compact);
   const {totals,grand:total,table}=summaryRoomTable(doc,y,roomNames,bodyAt(L.fs,L.pad,L.single),{textFs:L.fs,pad:L.pad,single:L.single,reserve:L.reserve});
@@ -9120,7 +9654,7 @@ function pdfDepartmentSummary(){
   pages.forEach((x,i)=>{
     if(i)doc.addPage(); const g=x.g,d=x.d;
     const dateLabel = d.sessionLabel ? `${reportDMY(d.date)}    Session ${d.sessionLabel}` : reportDMY(d.date);
-    summaryPdfSection(doc,'END SEMESTER EXAMINATIONS SEATING SUMMARY',dateLabel,d.rows,d.rooms,true,g.department||timetableDepartmentHeaderLabel(),true);
+    summaryPdfSection(doc,`${examTypeWord()} SEMESTER EXAMINATIONS SEATING SUMMARY`,dateLabel,d.rows,d.rooms,true,g.department||timetableDepartmentHeaderLabel(),true);
   });
   doc.save('department-wise-summary-course-DSU.pdf'); toast(`Downloaded Department-wise Summary PDF — ${pages.length} section(s)`,'ok');
 }
@@ -11397,7 +11931,7 @@ render();
 
 /* Every Excel export reports its own failure instead of dying silently. */
 (function guardExcelExports(){
-  ['downloadTemplate','downloadClashSeatingSheet','xlsxShortAttendanceReport','xlsxCourseWiseSeating','xlsxNoticeBoard','xlsxCourseSummary','xlsxFacultySummary','xlsxDepartmentSummary','xlsxAttendanceSheets','xlsxTimetableProgram','xlsxTimetableDay','xlsxStudentPapers','xlsxDaily','xlsxSeatingGrid','xlsxFaculty','xlsxInvigilationFacultyWise','xlsxInvigilation','xlsxExamLoad','xlsxDuplicateEnrollment','xlsxPaperRequirement','xlsxEnvelopeLabels'].forEach(name=>{
+  ['xlsxDateRoomSummary','xlsxRoomEnvelopes','downloadTemplate','downloadClashSeatingSheet','xlsxShortAttendanceReport','xlsxCourseWiseSeating','xlsxNoticeBoard','xlsxCourseSummary','xlsxFacultySummary','xlsxDepartmentSummary','xlsxAttendanceSheets','xlsxTimetableProgram','xlsxTimetableDay','xlsxStudentPapers','xlsxDaily','xlsxSeatingGrid','xlsxFaculty','xlsxInvigilationFacultyWise','xlsxInvigilation','xlsxExamLoad','xlsxDuplicateEnrollment','xlsxPaperRequirement','xlsxEnvelopeLabels'].forEach(name=>{
     const fn=window[name]; if(typeof fn!=='function' || fn.__guarded) return;
     const fail=e=>{ console.error(name, e); toast(`Excel export failed (${name}): ${e&&e.message?e.message:e}`,'err'); };
     const g=function(...args){
